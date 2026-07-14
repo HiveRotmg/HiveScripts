@@ -1,0 +1,6 @@
+{
+  "name": "Circle Walker",
+  "developer": "Hive",
+  "version": "1.0.0",
+  "entry": "circle-walker.mjs"
+}

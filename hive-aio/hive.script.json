@@ -1,0 +1,6 @@
+{
+  "name": "Hive AIO",
+  "developer": "Stukov",
+  "version": "2.2.0",
+  "entry": "hive-aio.mjs"
+}

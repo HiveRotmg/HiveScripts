@@ -1,0 +1,6 @@
+{
+  "name": "Directional Movement",
+  "developer": "Hive",
+  "version": "1.0.0",
+  "entry": "directional-movement.mjs"
+}
