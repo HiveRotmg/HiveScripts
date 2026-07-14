@@ -45,11 +45,5 @@ export function applyCombatSettings(state) {
     Hive.combat.disableAutoAbility();
   }
 
-  if (state.autoDodgeEnabled) {
-    Hive.walking.enableAutoDodge({ safeWalk: true });
-  } else {
-    Hive.walking.disableAutoDodge();
-  }
-
   applyProjectileNoclip(state);
 }

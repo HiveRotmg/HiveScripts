@@ -1,7 +1,7 @@
 import { Branch, Hive } from '@hive/sdk';
 import { LIMITS } from '../../../config/constants.mjs?rev=deepsea-20260713';
 import { TeleportToDeepSeaAbyssBeaconLeaf } from './teleport-to-deep-sea-abyss-beacon/TeleportToDeepSeaAbyssBeaconLeaf.mjs?rev=teleport-sync-20260713';
-import { WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf } from './walk-to-nearest-enemy/WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf.mjs?rev=teleport-sync-20260713';
+import { WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf } from './walk-to-nearest-enemy/WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf.mjs?rev=combat-range-20260714';
 
 export class DeepSeaLevelBranch extends Branch {
   constructor(controller, enemyTarget) {
@@ -9,7 +9,7 @@ export class DeepSeaLevelBranch extends Branch {
     this.controller = controller;
     this.addLeaves(
       new TeleportToDeepSeaAbyssBeaconLeaf(),
-      new WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf(enemyTarget),
+      new WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf(controller, enemyTarget),
     );
   }
 

@@ -1,9 +1,11 @@
-import { Hive, Leaf } from '@hive/sdk';
-import { TIMING } from '../../../../config/constants.mjs?rev=random-low-level-beacons-20260714';
+import { Leaf } from '@hive/sdk';
+import { TIMING } from '../../../../config/constants.mjs?rev=combat-range-20260714';
+import { combatPathfindingWalkTo } from '../../../../movement/pathfinding.mjs?rev=combat-range-20260714';
 
 export class WalkToNearestEnemyNearLowLevelBeaconLeaf extends Leaf {
-  constructor(enemyTarget, route) {
+  constructor(controller, enemyTarget, route) {
     super('Walk To Enemy Near Beacon');
+    this.controller = controller;
     this.enemyTarget = enemyTarget;
     this.route = route;
   }
@@ -16,7 +18,11 @@ export class WalkToNearestEnemyNearLowLevelBeaconLeaf extends Leaf {
     const enemy = this.enemyTarget.select();
     if (!enemy) return TIMING.enemyRefreshMs;
 
-    Hive.walking.pathfindingWalkTo(enemy.position.x, enemy.position.y);
+    combatPathfindingWalkTo(
+      this.controller,
+      enemy.position.x,
+      enemy.position.y,
+    );
     return TIMING.enemyRefreshMs;
   }
 }

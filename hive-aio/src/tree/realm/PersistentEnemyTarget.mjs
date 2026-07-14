@@ -4,8 +4,12 @@ import { LIMITS } from '../../config/constants.mjs';
 export class PersistentEnemyTarget {
   targetObjectId = null;
 
+  constructor(onTargetChanged = () => {}) {
+    this.onTargetChanged = onTargetChanged;
+  }
+
   reset() {
-    this.targetObjectId = null;
+    this.setTarget(null);
   }
 
   select() {
@@ -15,11 +19,10 @@ export class PersistentEnemyTarget {
       : Hive.enemies.getById(this.targetObjectId);
 
     if (!current) {
-      this.targetObjectId = nearest?.objectId ?? null;
-      return nearest;
+      return this.setTarget(nearest);
     }
 
-    if (!nearest || nearest.objectId === current.objectId) return current;
+    if (!nearest || nearest.objectId === current.objectId) return this.setTarget(current);
 
     const currentDistance = Hive.self.distanceTo(current.position);
     const nearestDistance = Hive.self.distanceTo(nearest.position);
@@ -27,10 +30,15 @@ export class PersistentEnemyTarget {
       > LIMITS.enemyTargetSwitchAdvantageTiles;
 
     if (shouldSwitch) {
-      this.targetObjectId = nearest.objectId;
-      return nearest;
+      return this.setTarget(nearest);
     }
 
-    return current;
+    return this.setTarget(current);
+  }
+
+  setTarget(target) {
+    this.targetObjectId = target?.objectId ?? null;
+    this.onTargetChanged(this.targetObjectId);
+    return target ?? null;
   }
 }

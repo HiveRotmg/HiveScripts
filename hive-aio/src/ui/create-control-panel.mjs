@@ -82,6 +82,14 @@ export function createControlPanel(controller, servers, serverOptions) {
                 tone: 'neutral',
                 width: 'full',
               }),
+              Panel.metric({
+                id: 'current-target',
+                label: 'Current Target',
+                value: 'None',
+                detail: 'No active enemy',
+                tone: 'neutral',
+                width: 'full',
+              }),
               Panel.row([
                 Panel.badge('Realm entry', {
                   id: 'route-state',
@@ -162,6 +170,20 @@ export function createControlPanel(controller, servers, serverOptions) {
                   value: state.autoLootEnabled,
                   width: 'full',
                   onChange: (enabled) => controller.setAutoLootEnabled(enabled),
+                }),
+                Panel.toggle({
+                  id: 'auto-drink',
+                  label: 'AutoDrink stat potions',
+                  value: state.autoDrinkEnabled,
+                  width: 'full',
+                  onChange: (enabled) => controller.setAutoDrinkEnabled(enabled),
+                }),
+                Panel.toggle({
+                  id: 'pickup-potions',
+                  label: 'Pick up stat potions',
+                  value: state.pickupPotionsEnabled,
+                  width: 'full',
+                  onChange: (enabled) => controller.setPickupPotionsEnabled(enabled),
                 }),
               ], { appearance: 'plain' }),
               Panel.divider('Minimum tier to keep'),

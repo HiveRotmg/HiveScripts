@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Hive, TreeScript } from '@hive/sdk';
-import { NEXUS_HEALING_WAYPOINT, NEXUS_PORTAL_WAYPOINT } from '../src/config/constants.mjs';
+import { LIMITS, NEXUS_HEALING_WAYPOINT, NEXUS_PORTAL_WAYPOINT, TIMING } from '../src/config/constants.mjs';
 import { createTree } from '../src/tree/create-tree.mjs';
 
 function createController() {
@@ -9,6 +9,7 @@ function createController() {
     state: {
       automationRunning: true,
       vault: false,
+      autoDodgeEnabled: false,
     },
   };
 }
@@ -23,6 +24,11 @@ function createTestTree(controller) {
 function activeNames(tree) {
   return tree.getActivePath().map((node) => node.getName());
 }
+
+const COMBAT_PATH_OPTIONS = Object.freeze({
+  minimumEnemyDistance: LIMITS.enemyExclusionDistanceTiles,
+  preferredRangeRatio: LIMITS.preferredCombatRangeRatio,
+});
 
 function setWorld({
   mapName,
@@ -208,13 +214,41 @@ test('low-level Realm leaf walks toward the nearest enemy', () => {
     name: 'Enemy',
     position: { x: 21, y: 34 },
   });
-  Hive.walking.pathfindingWalkTo = (x, y) => {
-    movement.push({ x, y });
+  Hive.walking.pathfindingWalkToCombatTarget = (x, y, options) => {
+    movement.push({ x, y, options });
+    return true;
+  };
+
+  assert.equal(tree.onLoop(), TIMING.enemyRefreshMs);
+  assert.deepEqual(movement, [{ x: 21, y: 34, options: COMBAT_PATH_OPTIONS }]);
+});
+
+test('Realm movement uses route-scoped dodge pathfinding when enabled', () => {
+  const controller = createController();
+  controller.state.autoDodgeEnabled = true;
+  const { tree } = createTestTree(controller);
+  const movement = [];
+
+  setWorld({ mapName: 'Realm of the Mad God', level: 3 });
+  Hive.enemies.getNearest = () => ({
+    objectId: 30,
+    name: 'Enemy',
+    position: { x: 21, y: 34 },
+  });
+  Hive.walking.enableAutoDodge = (options) => {
+    movement.push({ action: 'enableAutoDodge', options });
+    return true;
+  };
+  Hive.walking.pathfindingWalkToCombatTarget = (x, y, options) => {
+    movement.push({ action: 'pathfindingWalkToCombatTarget', x, y, options });
     return true;
   };
 
   tree.onLoop();
-  assert.deepEqual(movement, [{ x: 21, y: 34 }]);
+  assert.deepEqual(movement, [
+    { action: 'enableAutoDodge', options: { safeWalk: true } },
+    { action: 'pathfindingWalkToCombatTarget', x: 21, y: 34, options: COMBAT_PATH_OPTIONS },
+  ]);
 });
 
 test('Realm targeting persists across level routes until another enemy is more than 10 tiles closer', () => {
@@ -249,7 +283,7 @@ test('Realm targeting persists across level routes until another enemy is more t
   });
   Hive.enemies.getNearest = () => enemies.get(nearestId) ?? null;
   Hive.enemies.getById = (objectId) => enemies.get(objectId) ?? null;
-  Hive.walking.pathfindingWalkTo = (x, y) => {
+  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -268,6 +302,7 @@ test('Realm targeting persists across level routes until another enemy is more t
     { x: 30, y: 0 },
     { x: 20, y: 0 },
   ]);
+  assert.equal(controller.state.currentTargetObjectId, 40);
 });
 
 test('Realm targeting replaces a persisted enemy that is no longer visible', () => {
@@ -283,7 +318,7 @@ test('Realm targeting replaces a persisted enemy that is no longer visible', () 
   setWorld({ mapName: 'Realm of the Mad God', level: 3 });
   Hive.enemies.getNearest = () => enemies.get(nearestId) ?? null;
   Hive.enemies.getById = (objectId) => enemies.get(objectId) ?? null;
-  Hive.walking.pathfindingWalkTo = (x, y) => {
+  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -297,6 +332,7 @@ test('Realm targeting replaces a persisted enemy that is no longer visible', () 
     { x: 25, y: 0 },
     { x: 22, y: 0 },
   ]);
+  assert.equal(controller.state.currentTargetObjectId, 40);
 });
 
 test('levels 8 through 13 keep the selected low-level beacon within 150 tiles', () => {
@@ -324,7 +360,7 @@ test('levels 8 through 13 keep the selected low-level beacon within 150 tiles', 
     name: 'Enemy',
     position: { x: 20, y: 25 },
   });
-  Hive.walking.pathfindingWalkTo = (x, y) => {
+  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -422,7 +458,7 @@ test('levels 14 through 20 fight within 250 tiles and teleport back outside it',
     name: 'Enemy',
     position: { x: 30, y: 35 },
   });
-  Hive.walking.pathfindingWalkTo = (x, y) => {
+  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -466,7 +502,7 @@ test('levels 8 through 13 walk to enemies until an eligible beacon appears', () 
     name: 'Enemy',
     position: { x: 12, y: 13 },
   });
-  Hive.walking.pathfindingWalkTo = (x, y) => {
+  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -503,6 +539,10 @@ test('placeholder leaves issue no movement or portal commands', () => {
   let commandCount = 0;
 
   Hive.walking.pathfindingWalkTo = () => {
+    commandCount += 1;
+    return true;
+  };
+  Hive.walking.pathfindingWalkToCombatTarget = () => {
     commandCount += 1;
     return true;
   };

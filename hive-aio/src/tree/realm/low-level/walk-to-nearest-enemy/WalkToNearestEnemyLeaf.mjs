@@ -1,9 +1,11 @@
-import { Hive, Leaf } from '@hive/sdk';
-import { TIMING } from '../../../../config/constants.mjs';
+import { Leaf } from '@hive/sdk';
+import { TIMING } from '../../../../config/constants.mjs?rev=combat-range-20260714';
+import { combatPathfindingWalkTo } from '../../../../movement/pathfinding.mjs?rev=combat-range-20260714';
 
 export class WalkToNearestEnemyLeaf extends Leaf {
-  constructor(enemyTarget) {
+  constructor(controller, enemyTarget) {
     super('Walk To Nearest Enemy');
+    this.controller = controller;
     this.enemyTarget = enemyTarget;
   }
 
@@ -15,7 +17,11 @@ export class WalkToNearestEnemyLeaf extends Leaf {
     const enemy = this.enemyTarget.select();
     if (!enemy) return TIMING.enemyRefreshMs;
 
-    Hive.walking.pathfindingWalkTo(enemy.position.x, enemy.position.y);
+    combatPathfindingWalkTo(
+      this.controller,
+      enemy.position.x,
+      enemy.position.y,
+    );
     return TIMING.enemyRefreshMs;
   }
 }

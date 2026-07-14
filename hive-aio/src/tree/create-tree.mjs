@@ -1,6 +1,6 @@
 import { NexusBranch } from './nexus/NexusBranch.mjs?rev=nexus-healers-20260714';
 import { OtherMapBranch } from './other-map/OtherMapBranch.mjs';
-import { RealmBranch } from './realm/RealmBranch.mjs?rev=beacon-walk-fallback-20260714';
+import { RealmBranch } from './realm/RealmBranch.mjs?rev=combat-range-20260714';
 import { StoppedBranch } from './stopped/StoppedBranch.mjs';
 
 export function createTree(controller) {
@@ -11,6 +11,9 @@ export function createTree(controller) {
 
   return {
     branches: [stopped, nexus, realm, otherMap],
+    getCurrentTargetObjectId() {
+      return realm.enemyTarget.targetObjectId;
+    },
     reset() {
       nexus.reset();
       realm.reset();

@@ -1,9 +1,9 @@
 import { Branch, Hive } from '@hive/sdk';
 import { LIMITS } from '../../../config/constants.mjs?rev=beacon-walk-fallback-20260714';
-import { WalkToNearestEnemyLeaf } from '../low-level/walk-to-nearest-enemy/WalkToNearestEnemyLeaf.mjs';
+import { WalkToNearestEnemyLeaf } from '../low-level/walk-to-nearest-enemy/WalkToNearestEnemyLeaf.mjs?rev=combat-range-20260714';
 import { LowLevelBeaconRoute } from './low-level-beacon-route.mjs?rev=beacon-walk-fallback-20260714';
 import { TeleportToLowLevelBeaconLeaf } from './teleport-to-low-level-beacon/TeleportToLowLevelBeaconLeaf.mjs?rev=beacon-walk-fallback-20260714';
-import { WalkToNearestEnemyNearLowLevelBeaconLeaf } from './walk-to-nearest-enemy/WalkToNearestEnemyNearLowLevelBeaconLeaf.mjs?rev=beacon-walk-fallback-20260714';
+import { WalkToNearestEnemyNearLowLevelBeaconLeaf } from './walk-to-nearest-enemy/WalkToNearestEnemyNearLowLevelBeaconLeaf.mjs?rev=combat-range-20260714';
 
 export class PlainsLevelBranch extends Branch {
   constructor(controller, enemyTarget) {
@@ -12,8 +12,8 @@ export class PlainsLevelBranch extends Branch {
     this.beaconRoute = new LowLevelBeaconRoute();
     this.addLeaves(
       new TeleportToLowLevelBeaconLeaf(this.beaconRoute),
-      new WalkToNearestEnemyNearLowLevelBeaconLeaf(enemyTarget, this.beaconRoute),
-      new WalkToNearestEnemyLeaf(enemyTarget),
+      new WalkToNearestEnemyNearLowLevelBeaconLeaf(controller, enemyTarget, this.beaconRoute),
+      new WalkToNearestEnemyLeaf(controller, enemyTarget),
     );
   }
 

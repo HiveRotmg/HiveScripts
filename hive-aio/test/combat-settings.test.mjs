@@ -3,7 +3,7 @@ import test from 'node:test';
 import { Hive } from '@hive/sdk';
 import { applyCombatSettings } from '../src/combat/apply-combat-settings.mjs';
 
-test('autododge follows the combat automation state', () => {
+test('combat settings leave route-scoped autododge to movement calls', () => {
   const calls = [];
   const state = {
     automationRunning: true,
@@ -18,14 +18,12 @@ test('autododge follows the combat automation state', () => {
   Hive.combat.disableAutoAbility = () => calls.push('disableAutoAbility');
   Hive.combat.enableProjectileNoclip = () => calls.push('enableProjectileNoclip');
   Hive.combat.disableProjectileNoclip = () => calls.push('disableProjectileNoclip');
-  Hive.walking.enableAutoDodge = (options) => calls.push(['enableAutoDodge', options]);
   Hive.walking.disableAutoDodge = () => calls.push('disableAutoDodge');
 
   applyCombatSettings(state);
   assert.deepEqual(calls, [
     'disableAutoAim',
     'disableAutoAbility',
-    ['enableAutoDodge', { safeWalk: true }],
     'enableProjectileNoclip',
   ]);
 

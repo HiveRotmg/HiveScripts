@@ -10,7 +10,7 @@ export const TIMING = Object.freeze({
   portalUseRetryMs: 1500,
   portalTransitionTimeoutMs: 12000,
   portalFailureCooldownMs: 10000,
-  enemyRefreshMs: 3000,
+  enemyRefreshMs: 250,
   beaconRefreshMs: 1000,
   beaconTeleportRetryMs: 3000,
 });
@@ -26,6 +26,8 @@ export const LIMITS = Object.freeze({
   plainsBeaconRadiusTiles: 150,
   deepSeaAbyssBeaconRadiusTiles: 250,
   enemyTargetSwitchAdvantageTiles: 10,
+  enemyExclusionDistanceTiles: 1.3,
+  preferredCombatRangeRatio: 0.75,
 });
 
 function normalizeServerAddress(address) {

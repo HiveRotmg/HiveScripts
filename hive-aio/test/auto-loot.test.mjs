@@ -8,6 +8,10 @@ function gear(id, name, tier, slotType = 'weapon') {
   return { id, name, tier: String(tier), slotType };
 }
 
+function ring(id, stat, tier) {
+  return gear(id, `Ring of ${stat}`, tier, 'ring');
+}
+
 function setup({
   equipped = [-1, -1, -1, -1],
   metadata = [],
@@ -211,4 +215,80 @@ test('a full inventory still permits an unprotected direct upgrade but blocks a 
 
   assert.equal(protectedGear.autoLoot.onLoop(), null);
   assert.equal(protectedGear.inventory[0], 101);
+});
+
+test('same-tier attack and dexterity rings replace lower-priority rings', () => {
+  for (const preferredStat of ['Attack', 'Dexterity']) {
+    const ctx = setup({
+      equipped: [-1, -1, -1, 601],
+      metadata: [ring(601, 'Speed', 5), ring(602, preferredStat, 5)],
+      bagItems: [602],
+      compatible: [602],
+    });
+
+    ctx.autoLoot.onLoop();
+    ctx.autoLoot.onLoop();
+    assert.equal(ctx.inventory[3], 602, `${preferredStat} should replace same-tier Speed`);
+  }
+});
+
+test('same-tier health rings replace low-priority rings but not attack or dexterity', () => {
+  const replacesSpeed = setup({
+    equipped: [-1, -1, -1, 611],
+    metadata: [ring(611, 'Speed', 5), ring(612, 'Health', 5)],
+    bagItems: [612],
+    compatible: [612],
+  });
+  replacesSpeed.autoLoot.onLoop();
+  replacesSpeed.autoLoot.onLoop();
+  assert.equal(replacesSpeed.inventory[3], 612);
+
+  const keepsAttack = setup({
+    equipped: [-1, -1, -1, 613],
+    metadata: [ring(613, 'Attack', 5), ring(614, 'Health', 5)],
+    bagItems: [614],
+    compatible: [614],
+  });
+  assert.equal(keepsAttack.autoLoot.onLoop(), null);
+  assert.equal(keepsAttack.inventory[3], 613);
+});
+
+test('a one-tier-higher speed, wisdom, or vitality ring does not replace a better ring', () => {
+  for (const weakStat of ['Speed', 'Wisdom', 'Vitality']) {
+    const ctx = setup({
+      equipped: [-1, -1, -1, 621],
+      metadata: [ring(621, 'Dexterity', 4), ring(622, weakStat, 5)],
+      bagItems: [622],
+      compatible: [622],
+    });
+
+    assert.equal(ctx.autoLoot.onLoop(), null, `${weakStat} should not replace one-tier-lower Dexterity`);
+    assert.equal(ctx.inventory[3], 621);
+  }
+});
+
+test('health, attack, and dexterity rings upgrade by one tier', () => {
+  for (const preferredStat of ['Health', 'Attack', 'Dexterity']) {
+    const ctx = setup({
+      equipped: [-1, -1, -1, 631],
+      metadata: [ring(631, 'Dexterity', 4), ring(632, preferredStat, 5)],
+      bagItems: [632],
+      compatible: [632],
+    });
+
+    ctx.autoLoot.onLoop();
+    ctx.autoLoot.onLoop();
+    assert.equal(ctx.inventory[3], 632, `${preferredStat} should upgrade by one tier`);
+  }
+});
+
+test('ring candidate selection prefers attack or dexterity over a same-tier weak ring', () => {
+  const ctx = setup({
+    metadata: [ring(641, 'Speed', 5), ring(642, 'Attack', 5)],
+    bagItems: [641, 642],
+    compatible: [641, 642],
+  });
+
+  const plan = ctx.autoLoot.findPlan();
+  assert.equal(plan?.item.objectType, 642);
 });

@@ -6,6 +6,8 @@ export class ScriptState {
   autoDodgeEnabled = false;
   projectileNoclipEnabled = false;
   autoLootEnabled = false;
+  autoDrinkEnabled = false;
+  pickupPotionsEnabled = false;
   minKeepWeaponTier = 12;
   minKeepAbilityTier = 6;
   minKeepArmorTier = 12;
@@ -14,6 +16,7 @@ export class ScriptState {
   selectedServer = '';
   selectedServerName = '';
   mapKind = 'other';
+  currentTargetObjectId = null;
   panel = null;
   subscriptions = [];
 }

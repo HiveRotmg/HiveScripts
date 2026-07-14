@@ -31,6 +31,8 @@ test('control panel exposes the required configuration and telemetry', () => {
     setAutoDodgeEnabled() {},
     setProjectileNoclipEnabled() {},
     setAutoLootEnabled() {},
+    setAutoDrinkEnabled() {},
+    setPickupPotionsEnabled() {},
     setLootKeepTier() {},
     setAutoNexusPercent() {},
     selectPanelConfig() {},
@@ -75,6 +77,8 @@ test('control panel exposes the required configuration and telemetry', () => {
   assert.equal(byId.get('auto-dodge').type, 'toggle');
   assert.equal(byId.get('projectile-noclip').type, 'toggle');
   assert.equal(byId.get('auto-loot').type, 'toggle');
+  assert.equal(byId.get('auto-drink').type, 'toggle');
+  assert.equal(byId.get('pickup-potions').type, 'toggle');
   assert.equal(byId.get('keep-weapon-tier').type, 'number');
   assert.equal(byId.get('keep-ability-tier').type, 'number');
   assert.equal(byId.get('keep-armor-tier').type, 'number');
@@ -88,6 +92,8 @@ test('control panel exposes the required configuration and telemetry', () => {
   assert.equal(byId.get('config-load').type, 'button');
   assert.equal(byId.get('config-delete').type, 'button');
   assert.equal(byId.get('health-state').type, 'progress');
+  assert.equal(byId.get('current-target').type, 'metric');
+  assert.equal(overviewIds.has('current-target'), true);
   assert.equal(byId.get('tree-branch').type, 'metric');
   assert.equal(byId.get('tree-leaf').type, 'metric');
   assert.equal(byId.get('activity-log').type, 'log');

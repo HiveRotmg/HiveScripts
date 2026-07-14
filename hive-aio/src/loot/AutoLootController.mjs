@@ -1,5 +1,6 @@
 import { Hive } from '@hive/sdk';
 import { isRealmMap } from '../world/map-kind.mjs';
+import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combat-range-20260714';
 
 const EQUIPMENT = Object.freeze({
   weapon: { slot: 0, thresholdKey: 'minKeepWeaponTier' },
@@ -15,6 +16,37 @@ const RETRY_DELAY_MS = 3000;
 function numericTier(item) {
   const value = String(item?.tier ?? '').trim();
   return /^\d+$/.test(value) ? Number(value) : null;
+}
+
+export function ringPreference(item) {
+  const name = String(item?.name ?? '').trim().toLowerCase();
+  if (/\b(?:attack|dexterity)\b/.test(name)) return 2;
+  if (/\b(?:health|life)\b/.test(name)) return 1;
+  return 0;
+}
+
+export function isEquipmentUpgrade({
+  category,
+  tier,
+  info,
+  equippedObjectType,
+  equippedTier,
+  equippedInfo,
+}) {
+  if (equippedObjectType <= 0) return true;
+  if (equippedTier === null) return false;
+  if (category !== 'ring') return tier > equippedTier;
+
+  const tierDifference = tier - equippedTier;
+  const candidatePreference = ringPreference(info);
+  const equippedPreference = ringPreference(equippedInfo);
+  if (tierDifference === 0) return candidatePreference > equippedPreference;
+  if (tierDifference === 1) return candidatePreference >= 1;
+  return tierDifference >= 2;
+}
+
+function ringCandidateScore(candidate) {
+  return candidate.tier + ringPreference(candidate.info) / 2;
 }
 
 function itemKey(bagObjectId, slotIndex) {
@@ -86,10 +118,14 @@ export class AutoLootController {
           : null;
         const equippedTier = numericTier(equippedInfo);
         const compatible = Hive.self.canEquip(item.objectType);
-        const upgrade = compatible && (
-          equippedObjectType <= 0
-          || (equippedTier !== null && tier > equippedTier)
-        );
+        const upgrade = compatible && isEquipmentUpgrade({
+          category,
+          tier,
+          info,
+          equippedObjectType,
+          equippedTier,
+          equippedInfo,
+        });
         const keepByTier = tier >= threshold;
         if (!upgrade && !keepByTier) continue;
 
@@ -122,11 +158,19 @@ export class AutoLootController {
       }
     }
 
-    candidates.sort((a, b) =>
-      Number(b.upgrade) - Number(a.upgrade)
-      || a.distance - b.distance
-      || b.tier - a.tier
-      || a.item.slotIndex - b.item.slotIndex);
+    candidates.sort((a, b) => {
+      const upgradeDifference = Number(b.upgrade) - Number(a.upgrade);
+      if (upgradeDifference !== 0) return upgradeDifference;
+      if (a.upgrade && b.upgrade && a.category === 'ring' && b.category === 'ring') {
+        const ringScoreDifference = ringCandidateScore(b) - ringCandidateScore(a);
+        if (ringScoreDifference !== 0) return ringScoreDifference;
+        const preferenceDifference = ringPreference(b.info) - ringPreference(a.info);
+        if (preferenceDifference !== 0) return preferenceDifference;
+      }
+      return a.distance - b.distance
+        || b.tier - a.tier
+        || a.item.slotIndex - b.item.slotIndex;
+    });
     return candidates[0] ?? null;
   }
 
@@ -146,7 +190,7 @@ export class AutoLootController {
       action.item = liveItem;
 
       if (Hive.self.distanceTo(liveBag.position) > 1) {
-        Hive.walking.pathfindingWalkTo(liveBag.position.x, liveBag.position.y);
+        pathfindingWalkTo(this.controller, liveBag.position.x, liveBag.position.y);
       } else {
         Hive.walking.stopMoving();
         const sent = Hive.loot.pickupToSlot(liveBag, liveItem.slotIndex, action.destinationSlot);

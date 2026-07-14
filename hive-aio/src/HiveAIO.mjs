@@ -1,16 +1,18 @@
 import { Hive, TreeScript } from '@hive/sdk';
-import { applyCombatSettings, disableCombatAutomation } from './combat/apply-combat-settings.mjs?rev=projectile-noclip-prod-20260713';
+import { applyCombatSettings, disableCombatAutomation } from './combat/apply-combat-settings.mjs?rev=combined-dodge-fix-20260714';
 import { createServerControl, TIMING } from './config/constants.mjs?rev=deepsea-20260713';
-import { ScriptState } from './state/ScriptState.mjs?rev=auto-loot-20260713';
-import { createTree } from './tree/create-tree.mjs?rev=beacon-walk-fallback-20260714';
-import { createControlPanel } from './ui/create-control-panel.mjs?rev=named-configs-20260714';
+import { ScriptState } from './state/ScriptState.mjs?rev=pickup-pots-20260714';
+import { createTree } from './tree/create-tree.mjs?rev=combat-range-20260714';
+import { createControlPanel } from './ui/create-control-panel.mjs?rev=pickup-pots-20260714';
 import { getMapKind } from './world/map-kind.mjs';
-import { AutoLootController } from './loot/AutoLootController.mjs?rev=auto-loot-20260713';
+import { AutoLootController } from './loot/AutoLootController.mjs?rev=ring-priority-20260714';
+import { AutoDrinkController } from './loot/AutoDrinkController.mjs?rev=pickup-pots-20260714';
 
 export default class HiveAIO extends TreeScript {
   state = new ScriptState();
   tree = null;
   autoLoot = null;
+  autoDrink = null;
 
   onStart() {
     const servers = Hive.connection.getKnownServers();
@@ -24,6 +26,7 @@ export default class HiveAIO extends TreeScript {
     Hive.autoNexus.enable(this.state.autoNexusPercent);
 
     this.autoLoot = new AutoLootController(this);
+    this.autoDrink = new AutoDrinkController(this);
     this.state.panel = createControlPanel(this, servers, serverControl.options);
     this.refreshPanelConfigs();
     this.state.subscriptions = [
@@ -46,6 +49,13 @@ export default class HiveAIO extends TreeScript {
 
   onLoop() {
     this.synchronizeMapState();
+    const drinkDelay = this.autoDrink?.onLoop();
+    if (drinkDelay !== null && drinkDelay !== undefined) {
+      this.setCurrentBranchName('Loot');
+      this.setCurrentLeafName('Stat Potions');
+      this.refreshPanel();
+      return drinkDelay;
+    }
     const lootDelay = this.autoLoot?.onLoop();
     if (lootDelay !== null && lootDelay !== undefined) {
       this.setCurrentBranchName('Realm');
@@ -63,6 +73,7 @@ export default class HiveAIO extends TreeScript {
     this.state.subscriptions = [];
     this.state.automationRunning = false;
     this.autoLoot?.reset();
+    this.autoDrink?.reset();
     disableCombatAutomation();
     Hive.walking.stopMoving();
     Hive.ui.status(null);
@@ -73,6 +84,7 @@ export default class HiveAIO extends TreeScript {
     this.state.automationRunning = true;
     this.tree?.reset();
     this.autoLoot?.reset();
+    this.autoDrink?.reset();
     Hive.autoNexus.enable(this.state.autoNexusPercent);
     applyCombatSettings(this.state);
     this.state.panel?.setText('start-stop', 'Stop');
@@ -84,6 +96,7 @@ export default class HiveAIO extends TreeScript {
     this.state.automationRunning = false;
     this.tree?.reset();
     this.autoLoot?.reset();
+    this.autoDrink?.reset();
     disableCombatAutomation();
     Hive.walking.stopMoving();
     this.state.panel?.setText('start-stop', 'Start');
@@ -98,6 +111,7 @@ export default class HiveAIO extends TreeScript {
     this.state.selectedServerName = servers.find((server) => server.address === address)?.name ?? address;
     this.tree?.reset();
     this.autoLoot?.reset();
+    this.autoDrink?.reset();
     disableCombatAutomation();
     const serverName = servers.find((server) => server.address === address)?.name ?? address;
     this.state.panel?.setProps('server-state', { text: serverName, tone: 'info' });
@@ -120,7 +134,11 @@ export default class HiveAIO extends TreeScript {
 
   setAutoDodgeEnabled(enabled) {
     this.state.autoDodgeEnabled = Boolean(enabled);
-    applyCombatSettings(this.state);
+    if (this.state.autoDodgeEnabled && this.state.automationRunning) {
+      Hive.walking.enableAutoDodge({ safeWalk: true });
+    } else {
+      Hive.walking.disableAutoDodge();
+    }
     this.appendActivity(`Autododge ${enabled ? 'enabled' : 'disabled'}`);
   }
 
@@ -134,6 +152,18 @@ export default class HiveAIO extends TreeScript {
     this.state.autoLootEnabled = Boolean(enabled);
     this.autoLoot?.reset();
     this.appendActivity(`Auto loot ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  setAutoDrinkEnabled(enabled) {
+    this.state.autoDrinkEnabled = Boolean(enabled);
+    this.autoDrink?.reset();
+    this.appendActivity(`AutoDrink ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  setPickupPotionsEnabled(enabled) {
+    this.state.pickupPotionsEnabled = Boolean(enabled);
+    this.autoDrink?.reset();
+    this.appendActivity(`Pick up stat potions ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   setLootKeepTier(category, tier) {
@@ -222,6 +252,7 @@ export default class HiveAIO extends TreeScript {
     this.state.mapKind = nextMapKind;
     this.tree?.onMapChange(nextMapKind);
     this.autoLoot?.reset();
+    this.autoDrink?.reset();
     applyCombatSettings(this.state);
     this.appendActivity(`Map: ${Hive.world.getName() || 'Unknown'}`);
   }
@@ -238,6 +269,26 @@ export default class HiveAIO extends TreeScript {
     const leaf = this.getCurrentLeafName() || 'None';
     const mapName = Hive.world.getName() || 'Unknown';
     const level = Hive.self.getLevel();
+    const targetObjectId = typeof this.tree?.getCurrentTargetObjectId === 'function'
+      ? this.tree.getCurrentTargetObjectId()
+      : this.state.currentTargetObjectId;
+    this.state.currentTargetObjectId = targetObjectId;
+    const currentTarget = targetObjectId === null
+      ? null
+      : Hive.enemies.getById(targetObjectId);
+    if (!currentTarget && targetObjectId !== null) this.state.currentTargetObjectId = null;
+    const targetDistance = currentTarget
+      ? Hive.self.distanceTo(currentTarget.position)
+      : null;
+    const targetDetail = currentTarget
+      ? [
+          `Object ${currentTarget.objectId}`,
+          Number.isFinite(targetDistance) ? `${targetDistance.toFixed(1)} tiles` : null,
+          Number(currentTarget.maxHp) > 0
+            ? `${Math.max(0, Number(currentTarget.hp) || 0)} / ${Number(currentTarget.maxHp)} HP`
+            : null,
+        ].filter(Boolean).join(' | ')
+      : 'No active enemy';
     const routeName = this.state.vault ? 'Vault placeholder' : 'Realm entry';
     const mapTone = this.state.mapKind === 'realm'
       ? 'success'
@@ -279,6 +330,11 @@ export default class HiveAIO extends TreeScript {
       value: leaf,
       detail: branch,
       tone: this.state.automationRunning ? 'info' : 'neutral',
+    });
+    panel.setProps('current-target', {
+      value: currentTarget?.name || (currentTarget ? `Enemy ${currentTarget.objectId}` : 'None'),
+      detail: targetDetail,
+      tone: currentTarget ? (currentTarget.isBoss ? 'danger' : 'warning') : 'neutral',
     });
     panel.setProps('tree-branch', { value: branch });
     panel.setProps('tree-leaf', { value: leaf });

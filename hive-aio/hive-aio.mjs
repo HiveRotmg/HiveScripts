@@ -1,1 +1,1 @@
-export { default } from './src/HiveAIO.mjs?rev=beacon-walk-fallback-20260714';
+export { default } from './src/HiveAIO.mjs?rev=ring-priority-20260714';
