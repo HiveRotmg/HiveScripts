@@ -1,5 +1,5 @@
 import { Branch, Hive } from '@hive/sdk';
-import { NexusFullHealthBranch } from './full-health/NexusFullHealthBranch.mjs?rev=nexus-healers-20260714';
+import { NexusFullHealthBranch } from './full-health/NexusFullHealthBranch.mjs?rev=portal-dodge-entry-20260714';
 import { NexusInjuredBranch } from './injured/NexusInjuredBranch.mjs?rev=nexus-healers-20260714';
 
 export class NexusBranch extends Branch {

@@ -4,6 +4,7 @@ import {
   NEXUS_HEALING_WAYPOINT,
   TIMING,
 } from '../../../../config/constants.mjs?rev=nexus-healers-20260714';
+import { pathfindingWalkTo } from '../../../../movement/pathfinding.mjs?rev=combined-navigation-20260714';
 
 export class WalkToNexusHealersLeaf extends Leaf {
   constructor(controller) {
@@ -17,7 +18,11 @@ export class WalkToNexusHealersLeaf extends Leaf {
 
   onLoop() {
     if (!Hive.walking.hasReached(NEXUS_HEALING_WAYPOINT, LIMITS.waypointTolerance)) {
-      Hive.walking.pathfindingWalkTo(NEXUS_HEALING_WAYPOINT.x, NEXUS_HEALING_WAYPOINT.y);
+      pathfindingWalkTo(
+        this.controller,
+        NEXUS_HEALING_WAYPOINT.x,
+        NEXUS_HEALING_WAYPOINT.y,
+      );
     }
     return TIMING.placeholderPollMs;
   }

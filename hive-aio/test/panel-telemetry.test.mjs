@@ -102,7 +102,7 @@ test('Hive AIO autododge toggle controls predictive dodge without cancelling mov
   controller.setAutoDodgeEnabled(false);
 
   assert.deepEqual(calls, [
-    ['enable', { safeWalk: true }],
+    ['enable', { safeWalk: true, projectileJump: true, maxJumpDistance: 1.5 }],
     ['disable'],
   ]);
 });

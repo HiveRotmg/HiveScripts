@@ -1,5 +1,5 @@
 import { Hive, Leaf } from '@hive/sdk';
-import { LIMITS, TIMING } from '../../../../../config/constants.mjs';
+import { LIMITS, TIMING } from '../../../../../config/constants.mjs?rev=portal-settle-20260714';
 
 function distanceSquared(from, to) {
   const deltaX = to.x - from.x;
@@ -48,6 +48,18 @@ export class WaitForRealmTransitionLeaf extends Leaf {
     if (distanceSquared(position, portal) > LIMITS.portalUseTolerance ** 2) {
       this.progress.resetPortalAttempt();
       return 0;
+    }
+
+    Hive.walking.stopMoving();
+    if (this.progress.portalInRangeSince === null) {
+      this.progress.portalInRangeSince = now;
+      return TIMING.nexusPollMs;
+    }
+    if (now - this.progress.portalInRangeSince < TIMING.portalSettleMs) {
+      return Math.min(
+        TIMING.nexusPollMs,
+        TIMING.portalSettleMs - (now - this.progress.portalInRangeSince),
+      );
     }
 
     if (!Hive.walking.enterPortal(portal.objectId)) {

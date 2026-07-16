@@ -1,18 +1,20 @@
 import { Hive, TreeScript } from '@hive/sdk';
-import { applyCombatSettings, disableCombatAutomation } from './combat/apply-combat-settings.mjs?rev=combined-dodge-fix-20260714';
-import { createServerControl, TIMING } from './config/constants.mjs?rev=deepsea-20260713';
-import { ScriptState } from './state/ScriptState.mjs?rev=pickup-pots-20260714';
-import { createTree } from './tree/create-tree.mjs?rev=combat-range-20260714';
+import { applyCombatSettings, disableCombatAutomation } from './combat/apply-combat-settings.mjs?rev=goal-owned-dodge-20260714';
+import { createServerControl, TIMING } from './config/constants.mjs?rev=combined-navigation-20260714';
+import { ScriptState } from './state/ScriptState.mjs?rev=vault-storage-20260715';
+import { createTree } from './tree/create-tree.mjs?rev=distant-enemy-progress-20260716';
 import { createControlPanel } from './ui/create-control-panel.mjs?rev=pickup-pots-20260714';
-import { getMapKind } from './world/map-kind.mjs';
-import { AutoLootController } from './loot/AutoLootController.mjs?rev=ring-priority-20260714';
-import { AutoDrinkController } from './loot/AutoDrinkController.mjs?rev=pickup-pots-20260714';
+import { getMapKind, isOryxCastleMap } from './world/map-kind.mjs?rev=oryx-castle-safety-20260715';
+import { AutoLootController } from './loot/AutoLootController.mjs?rev=combined-navigation-20260714';
+import { AutoDrinkController } from './loot/AutoDrinkController.mjs?rev=combined-navigation-20260714';
+import { VaultManager } from './storage/VaultManager.mjs?rev=vault-storage-inventory-confirm-20260715';
 
 export default class HiveAIO extends TreeScript {
   state = new ScriptState();
   tree = null;
   autoLoot = null;
   autoDrink = null;
+  vaultManager = null;
 
   onStart() {
     const servers = Hive.connection.getKnownServers();
@@ -27,6 +29,7 @@ export default class HiveAIO extends TreeScript {
 
     this.autoLoot = new AutoLootController(this);
     this.autoDrink = new AutoDrinkController(this);
+    this.vaultManager = new VaultManager(this);
     this.state.panel = createControlPanel(this, servers, serverControl.options);
     this.refreshPanelConfigs();
     this.state.subscriptions = [
@@ -49,6 +52,18 @@ export default class HiveAIO extends TreeScript {
 
   onLoop() {
     this.synchronizeMapState();
+    if (isOryxCastleMap()) {
+      const delay = super.onLoop();
+      this.refreshPanel();
+      return delay;
+    }
+    const vaultDelay = this.vaultManager?.onLoop();
+    if (vaultDelay !== null && vaultDelay !== undefined) {
+      this.setCurrentBranchName('Storage');
+      this.setCurrentLeafName(this.vaultManager.getActivityLabel());
+      this.refreshPanel();
+      return vaultDelay;
+    }
     const drinkDelay = this.autoDrink?.onLoop();
     if (drinkDelay !== null && drinkDelay !== undefined) {
       this.setCurrentBranchName('Loot');
@@ -74,6 +89,7 @@ export default class HiveAIO extends TreeScript {
     this.state.automationRunning = false;
     this.autoLoot?.reset();
     this.autoDrink?.reset();
+    this.vaultManager?.pause();
     disableCombatAutomation();
     Hive.walking.stopMoving();
     Hive.ui.status(null);
@@ -85,6 +101,7 @@ export default class HiveAIO extends TreeScript {
     this.tree?.reset();
     this.autoLoot?.reset();
     this.autoDrink?.reset();
+    this.vaultManager?.onAutomationStart();
     Hive.autoNexus.enable(this.state.autoNexusPercent);
     applyCombatSettings(this.state);
     this.state.panel?.setText('start-stop', 'Stop');
@@ -97,6 +114,7 @@ export default class HiveAIO extends TreeScript {
     this.tree?.reset();
     this.autoLoot?.reset();
     this.autoDrink?.reset();
+    this.vaultManager?.pause();
     disableCombatAutomation();
     Hive.walking.stopMoving();
     this.state.panel?.setText('start-stop', 'Start');
@@ -112,6 +130,7 @@ export default class HiveAIO extends TreeScript {
     this.tree?.reset();
     this.autoLoot?.reset();
     this.autoDrink?.reset();
+    this.vaultManager?.pause();
     disableCombatAutomation();
     const serverName = servers.find((server) => server.address === address)?.name ?? address;
     this.state.panel?.setProps('server-state', { text: serverName, tone: 'info' });
@@ -135,7 +154,11 @@ export default class HiveAIO extends TreeScript {
   setAutoDodgeEnabled(enabled) {
     this.state.autoDodgeEnabled = Boolean(enabled);
     if (this.state.autoDodgeEnabled && this.state.automationRunning) {
-      Hive.walking.enableAutoDodge({ safeWalk: true });
+      Hive.walking.enableAutoDodge({
+        safeWalk: true,
+        projectileJump: true,
+        maxJumpDistance: 1.5,
+      });
     } else {
       Hive.walking.disableAutoDodge();
     }
@@ -289,7 +312,8 @@ export default class HiveAIO extends TreeScript {
             : null,
         ].filter(Boolean).join(' | ')
       : 'No active enemy';
-    const routeName = this.state.vault ? 'Vault placeholder' : 'Realm entry';
+    const routeName = this.vaultManager?.getRouteName()
+      || (this.state.vault ? 'Vault placeholder' : 'Realm entry');
     const mapTone = this.state.mapKind === 'realm'
       ? 'success'
       : (this.state.mapKind === 'nexus' ? 'info' : 'warning');
@@ -341,7 +365,7 @@ export default class HiveAIO extends TreeScript {
     panel.setProps('route-state', { text: routeName });
     panel.setProps('routing-state', {
       value: routeName,
-      detail: this.state.vault ? 'Vault enabled' : 'Vault disabled',
+      detail: this.vaultManager?.getRouteName() ? 'Storage workflow active' : 'Realm routing active',
     });
     panel.setProps('server-state', { text: this.state.selectedServerName || this.state.selectedServer });
     panel.setProps('overview-server-state', { text: this.state.selectedServerName || this.state.selectedServer });

@@ -1,5 +1,5 @@
 import { Branch, Hive } from '@hive/sdk';
-import { RealmEntryBranch } from './realm-entry/RealmEntryBranch.mjs';
+import { RealmEntryBranch } from './realm-entry/RealmEntryBranch.mjs?rev=portal-dodge-entry-20260714';
 import { VaultEnabledLeaf } from './vault-enabled/VaultEnabledLeaf.mjs';
 
 export class NexusFullHealthBranch extends Branch {

@@ -1,6 +1,10 @@
 export class ScriptState {
   automationRunning = false;
   vault = false;
+  vaultOnStartDone = false;
+  storageDepositRequested = false;
+  storageDepositNonPotions = false;
+  storageBlocked = false;
   autoAimEnabled = true;
   autoAbilityEnabled = false;
   autoDodgeEnabled = false;

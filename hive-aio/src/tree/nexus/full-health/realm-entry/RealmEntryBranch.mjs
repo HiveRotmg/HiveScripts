@@ -1,8 +1,8 @@
 import { Branch } from '@hive/sdk';
-import { RealmEntryProgress } from './RealmEntryProgress.mjs';
-import { EnterOpenRealmLeaf } from './enter-open-realm/EnterOpenRealmLeaf.mjs';
-import { WaitForRealmTransitionLeaf } from './wait-for-realm-transition/WaitForRealmTransitionLeaf.mjs';
-import { WalkToPortalWaypointLeaf } from './walk-to-portal-waypoint/WalkToPortalWaypointLeaf.mjs';
+import { RealmEntryProgress } from './RealmEntryProgress.mjs?rev=portal-dodge-entry-20260714';
+import { EnterOpenRealmLeaf } from './enter-open-realm/EnterOpenRealmLeaf.mjs?rev=portal-dodge-entry-20260714';
+import { WaitForRealmTransitionLeaf } from './wait-for-realm-transition/WaitForRealmTransitionLeaf.mjs?rev=portal-dodge-entry-20260714';
+import { WalkToPortalWaypointLeaf } from './walk-to-portal-waypoint/WalkToPortalWaypointLeaf.mjs?rev=portal-dodge-entry-20260714';
 
 export class RealmEntryBranch extends Branch {
   constructor(controller) {

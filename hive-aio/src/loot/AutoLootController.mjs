@@ -1,6 +1,6 @@
 import { Hive } from '@hive/sdk';
 import { isRealmMap } from '../world/map-kind.mjs';
-import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combat-range-20260714';
+import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combined-navigation-20260714';
 
 const EQUIPMENT = Object.freeze({
   weapon: { slot: 0, thresholdKey: 'minKeepWeaponTier' },

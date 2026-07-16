@@ -1,9 +1,8 @@
 import { Branch } from '@hive/sdk';
 import { isRealmMap } from '../../world/map-kind.mjs';
-import { DeepSeaLevelBranch } from './deep-sea-level/DeepSeaLevelBranch.mjs?rev=combat-range-20260714';
-import { HighLevelBranch } from './high-level/HighLevelBranch.mjs?rev=deepsea-20260713';
-import { LowLevelBranch } from './low-level/LowLevelBranch.mjs?rev=combat-range-20260714';
-import { PlainsLevelBranch } from './plains-level/PlainsLevelBranch.mjs?rev=combat-range-20260714';
+import { HighLevelBranch } from './high-level/HighLevelBranch.mjs?rev=distant-enemy-progress-20260716';
+import { LowLevelBranch } from './low-level/LowLevelBranch.mjs?rev=distant-enemy-progress-20260716';
+import { PlainsLevelBranch } from './plains-level/PlainsLevelBranch.mjs?rev=distant-enemy-progress-20260716';
 import { PersistentEnemyTarget } from './PersistentEnemyTarget.mjs?rev=target-selector-20260714';
 
 export class RealmBranch extends Branch {
@@ -14,11 +13,11 @@ export class RealmBranch extends Branch {
       this.controller.state.currentTargetObjectId = objectId;
     });
     this.plainsLevel = new PlainsLevelBranch(controller, this.enemyTarget);
+    this.highLevel = new HighLevelBranch(controller, this.enemyTarget);
     this.addLeaves(
       new LowLevelBranch(controller, this.enemyTarget),
       this.plainsLevel,
-      new DeepSeaLevelBranch(controller, this.enemyTarget),
-      new HighLevelBranch(controller),
+      this.highLevel,
     );
   }
 
@@ -29,5 +28,6 @@ export class RealmBranch extends Branch {
   reset() {
     this.enemyTarget.reset();
     this.plainsLevel.reset();
+    this.highLevel.reset();
   }
 }

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { Hive } from '@hive/sdk';
 import { applyCombatSettings } from '../src/combat/apply-combat-settings.mjs';
 
-test('combat settings leave route-scoped autododge to movement calls', () => {
+test('combat settings keep goal-owned autododge enabled for all automated movement', () => {
   const calls = [];
   const state = {
     automationRunning: true,
@@ -18,10 +18,12 @@ test('combat settings leave route-scoped autododge to movement calls', () => {
   Hive.combat.disableAutoAbility = () => calls.push('disableAutoAbility');
   Hive.combat.enableProjectileNoclip = () => calls.push('enableProjectileNoclip');
   Hive.combat.disableProjectileNoclip = () => calls.push('disableProjectileNoclip');
+  Hive.walking.enableAutoDodge = (options) => calls.push(['enableAutoDodge', options]);
   Hive.walking.disableAutoDodge = () => calls.push('disableAutoDodge');
 
   applyCombatSettings(state);
   assert.deepEqual(calls, [
+    ['enableAutoDodge', { safeWalk: true, projectileJump: true, maxJumpDistance: 1.5 }],
     'disableAutoAim',
     'disableAutoAbility',
     'enableProjectileNoclip',
@@ -38,7 +40,7 @@ test('combat settings leave route-scoped autododge to movement calls', () => {
   ]);
 });
 
-test('projectile noclip remains enabled outside a realm while automation is running', () => {
+test('goal-owned autododge and projectile noclip remain enabled outside a realm', () => {
   const calls = [];
   const state = {
     automationRunning: true,
@@ -52,14 +54,15 @@ test('projectile noclip remains enabled outside a realm while automation is runn
   Hive.combat.disableAutoAim = () => calls.push('disableAutoAim');
   Hive.combat.disableAutoAbility = () => calls.push('disableAutoAbility');
   Hive.combat.enableProjectileNoclip = () => calls.push('enableProjectileNoclip');
+  Hive.walking.enableAutoDodge = (options) => calls.push(['enableAutoDodge', options]);
   Hive.walking.disableAutoDodge = () => calls.push('disableAutoDodge');
 
   applyCombatSettings(state);
 
   assert.deepEqual(calls, [
+    ['enableAutoDodge', { safeWalk: true, projectileJump: true, maxJumpDistance: 1.5 }],
     'disableAutoAim',
     'disableAutoAbility',
-    'disableAutoDodge',
     'enableProjectileNoclip',
   ]);
 });

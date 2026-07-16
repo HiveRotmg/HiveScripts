@@ -1,5 +1,6 @@
 export const NEXUS_PORTAL_WAYPOINT = Object.freeze({ x: 108, y: 140 });
 export const NEXUS_HEALING_WAYPOINT = Object.freeze({ x: 107, y: 158 });
+export const REALM_FALLBACK_CENTER = Object.freeze({ x: 512, y: 512 });
 
 export const TIMING = Object.freeze({
   treeIdleMs: 250,
@@ -7,10 +8,12 @@ export const TIMING = Object.freeze({
   nexusPollMs: 200,
   waypointRetryMs: 4000,
   portalApproachRetryMs: 2500,
+  portalSettleMs: 300,
   portalUseRetryMs: 1500,
   portalTransitionTimeoutMs: 12000,
   portalFailureCooldownMs: 10000,
   enemyRefreshMs: 250,
+  explorationWaypointTimeoutMs: 8000,
   beaconRefreshMs: 1000,
   beaconTeleportRetryMs: 3000,
 });
@@ -18,15 +21,26 @@ export const TIMING = Object.freeze({
 export const LIMITS = Object.freeze({
   waypointTolerance: 0.6,
   maxWaypointRetries: 3,
-  portalUseTolerance: 0.45,
+  portalApproachTolerance: 0.3,
+  portalUseTolerance: 0.4,
   maxPortalUseAttempts: 5,
-  lowLevelExclusiveMaximum: 8,
+  lowLevelInclusiveMaximum: 8,
   plainsLevelExclusiveMaximum: 14,
-  deepSeaLevelInclusiveMaximum: 20,
+  highLevelInclusiveMaximum: 20,
+  maxLevel: 20,
   plainsBeaconRadiusTiles: 150,
   deepSeaAbyssBeaconRadiusTiles: 250,
+  plainsExplorationRadiusTiles: 55,
+  deepSeaExplorationRadiusTiles: 90,
+  explorationWaypointCount: 12,
+  explorationArrivalTolerance: 2,
+  realmCenterArrivalTolerance: 8,
   enemyTargetSwitchAdvantageTiles: 10,
-  enemyExclusionDistanceTiles: 1.3,
+  combatNavigationActivationDistanceTiles: 48,
+  distantEnemyApproachStepTiles: 24,
+  distantEnemyApproachToleranceTiles: 2,
+  distantEnemyRetargetDistanceTiles: 4,
+  enemyExclusionDistanceTiles: 1,
   preferredCombatRangeRatio: 0.75,
 });
 

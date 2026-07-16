@@ -16,16 +16,31 @@ function applyProjectileNoclip(state) {
   }
 }
 
+function applyAutoDodge(state) {
+  if (state.autoDodgeEnabled) {
+    Hive.walking.enableAutoDodge({
+      safeWalk: true,
+      projectileJump: true,
+      maxJumpDistance: 1.5,
+    });
+  } else {
+    Hive.walking.disableAutoDodge();
+  }
+}
+
 export function applyCombatSettings(state) {
   if (!state.automationRunning) {
     disableCombatAutomation();
     return;
   }
 
+  // Combined dodge owns movement toward every direct or pathfinding goal,
+  // including safe movement and non-Realm navigation.
+  applyAutoDodge(state);
+
   if (!isRealmMap()) {
     Hive.combat.disableAutoAim();
     Hive.combat.disableAutoAbility();
-    Hive.walking.disableAutoDodge();
     applyProjectileNoclip(state);
     return;
   }

@@ -1,5 +1,5 @@
 import { Hive } from '@hive/sdk';
-import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=autodrink-20260714';
+import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combined-navigation-20260714';
 
 const ACTION_DELAY_MS = 200;
 const ACTION_TIMEOUT_MS = 6000;

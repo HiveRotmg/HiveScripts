@@ -1,5 +1,6 @@
 import { Hive, Leaf } from '@hive/sdk';
-import { LIMITS, TIMING } from '../../../../../config/constants.mjs';
+import { LIMITS, TIMING } from '../../../../../config/constants.mjs?rev=portal-dodge-entry-20260714';
+import { pathfindingWalkTo } from '../../../../../movement/pathfinding.mjs?rev=combined-navigation-20260714';
 
 function distanceSquared(from, to) {
   const deltaX = to.x - from.x;
@@ -25,16 +26,36 @@ export class EnterOpenRealmLeaf extends Leaf {
     const now = Date.now();
     const position = Hive.self.getPosition();
     const inUseRange = distanceSquared(position, portal) <= LIMITS.portalUseTolerance ** 2;
+    const targetChanged = this.progress.portalTargetId !== portal.objectId;
 
     if (!inUseRange) {
-      const targetChanged = this.progress.portalTargetId !== portal.objectId;
+      this.progress.portalInRangeSince = null;
       const approachExpired = now - this.progress.lastPortalApproachAt >= TIMING.portalApproachRetryMs;
       if (targetChanged || approachExpired) {
         this.progress.portalTargetId = portal.objectId;
         this.progress.lastPortalApproachAt = now;
-        Hive.walking.pathfindingWalkTo(portal.x, portal.y);
+        pathfindingWalkTo(
+          this.controller,
+          portal.x,
+          portal.y,
+          LIMITS.portalApproachTolerance,
+        );
       }
       return TIMING.nexusPollMs;
+    }
+
+    Hive.walking.stopMoving();
+    if (targetChanged || this.progress.portalInRangeSince === null) {
+      this.progress.portalTargetId = portal.objectId;
+      this.progress.portalInRangeSince = now;
+      return TIMING.nexusPollMs;
+    }
+
+    if (now - this.progress.portalInRangeSince < TIMING.portalSettleMs) {
+      return Math.min(
+        TIMING.nexusPollMs,
+        TIMING.portalSettleMs - (now - this.progress.portalInRangeSince),
+      );
     }
 
     if (Hive.walking.enterPortal(portal.objectId)) {

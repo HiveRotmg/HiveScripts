@@ -1,5 +1,6 @@
 import { Hive, Leaf } from '@hive/sdk';
 import { LIMITS, NEXUS_PORTAL_WAYPOINT, TIMING } from '../../../../../config/constants.mjs';
+import { pathfindingWalkTo } from '../../../../../movement/pathfinding.mjs?rev=combined-navigation-20260714';
 
 export class WalkToPortalWaypointLeaf extends Leaf {
   constructor(controller, progress) {
@@ -9,8 +10,12 @@ export class WalkToPortalWaypointLeaf extends Leaf {
   }
 
   isValid() {
-    return !this.progress.waypointBypassed
-      && !Hive.walking.hasReached(NEXUS_PORTAL_WAYPOINT, LIMITS.waypointTolerance);
+    if (this.progress.waypointCompleted || this.progress.waypointBypassed) return false;
+    if (Hive.walking.hasReached(NEXUS_PORTAL_WAYPOINT, LIMITS.waypointTolerance)) {
+      this.progress.waypointCompleted = true;
+      return false;
+    }
+    return true;
   }
 
   onLoop() {
@@ -19,7 +24,11 @@ export class WalkToPortalWaypointLeaf extends Leaf {
     if (!this.progress.waypointStarted) {
       this.progress.waypointStarted = true;
       this.progress.lastWaypointCommandAt = now;
-      Hive.walking.pathfindingWalkTo(NEXUS_PORTAL_WAYPOINT.x, NEXUS_PORTAL_WAYPOINT.y);
+      pathfindingWalkTo(
+        this.controller,
+        NEXUS_PORTAL_WAYPOINT.x,
+        NEXUS_PORTAL_WAYPOINT.y,
+      );
       return TIMING.nexusPollMs;
     }
 
@@ -35,7 +44,11 @@ export class WalkToPortalWaypointLeaf extends Leaf {
     }
 
     this.progress.lastWaypointCommandAt = now;
-    Hive.walking.pathfindingWalkTo(NEXUS_PORTAL_WAYPOINT.x, NEXUS_PORTAL_WAYPOINT.y);
+    pathfindingWalkTo(
+      this.controller,
+      NEXUS_PORTAL_WAYPOINT.x,
+      NEXUS_PORTAL_WAYPOINT.y,
+    );
     return TIMING.nexusPollMs;
   }
 }

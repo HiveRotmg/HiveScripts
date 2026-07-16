@@ -1,5 +1,6 @@
 export class RealmEntryProgress {
   waypointStarted = false;
+  waypointCompleted = false;
   waypointBypassed = false;
   waypointRetryCount = 0;
   lastWaypointCommandAt = 0;
@@ -8,11 +9,13 @@ export class RealmEntryProgress {
   portalAttemptStartedAt = 0;
   lastPortalApproachAt = 0;
   lastPortalUseAt = 0;
+  portalInRangeSince = null;
   portalUseAttempts = 0;
   portalCooldowns = new Map();
 
   reset() {
     this.waypointStarted = false;
+    this.waypointCompleted = false;
     this.waypointBypassed = false;
     this.waypointRetryCount = 0;
     this.lastWaypointCommandAt = 0;
@@ -26,6 +29,7 @@ export class RealmEntryProgress {
     this.portalAttemptStartedAt = 0;
     this.lastPortalApproachAt = 0;
     this.lastPortalUseAt = 0;
+    this.portalInRangeSince = null;
     this.portalUseAttempts = 0;
   }
 
