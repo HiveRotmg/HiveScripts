@@ -3,6 +3,8 @@ import test from 'node:test';
 import { Hive } from '@hive/sdk';
 import { DrinkVaultPotionsController } from '../src/loot/DrinkVaultPotionsController.mjs';
 import { ScriptState } from '../src/state/ScriptState.mjs';
+import { resetAllVaultNavigation } from '../src/storage/navigate-to-vault.mjs';
+import { mockInventoryCapacity } from './helpers/mock-inventory-capacity.mjs';
 
 const ATTACK_POTION = 2591;
 
@@ -13,7 +15,9 @@ function setup({
   base = { attack: 10 },
   caps = { attack: 75 },
   mapName = 'Vault',
+  backpackTier = 1,
 } = {}) {
+  resetAllVaultNavigation();
   const state = new ScriptState();
   state.automationRunning = true;
   state.vaultOnStartDone = true;
@@ -52,7 +56,7 @@ function setup({
   Hive.self.getBaseStats = () => ({ ...liveBase });
   Hive.self.getStatCaps = () => ({ ...caps });
   Hive.inventory.getAll = () => [...inventory];
-  Hive.inventory.getBackpack = () => 1;
+  mockInventoryCapacity(Hive, backpackTier);
   Hive.inventory.getContainerSlots = (container) => storage[container] ?? [];
   Hive.inventory.getVaultSnapshot = () => ({
     active: currentMap === 'Vault',
@@ -117,19 +121,20 @@ test('does nothing when disabled or when no eligible potions remain', () => {
   assert.equal(ctx.state.drinkVaultPotionsActive, false);
 });
 
-test('from another map, nexuses while keeping drink intent sticky', () => {
+test('from another map, enterVault keeps drink intent sticky', () => {
   const ctx = setup({ mapName: 'Realm of the Mad God' });
   assert.equal(ctx.drink.onLoop(), 200);
   assert.equal(ctx.state.drinkVaultPotionsActive, true);
-  assert.equal(ctx.calls.nexus, 1);
-  assert.match(ctx.activity.at(-1), /returning to Nexus/i);
+  assert.equal(ctx.calls.enterVault, 1);
+  assert.equal(ctx.calls.nexus, 0);
+  assert.match(ctx.activity.at(-1), /entering Vault/i);
 });
 
-test('in Nexus, keeps intent active and leaves Vault entry to the tree', () => {
+test('in Nexus, enterVault is owned by the drink controller', () => {
   const ctx = setup({ mapName: 'Nexus' });
-  assert.equal(ctx.drink.onLoop(), null);
+  assert.equal(ctx.drink.onLoop(), 200);
   assert.equal(ctx.state.drinkVaultPotionsActive, true);
-  assert.equal(ctx.calls.enterVault, 0);
+  assert.equal(ctx.calls.enterVault, 1);
 });
 
 test('in Vault, withdraws then drinks an unmaxed attack potion', () => {
@@ -178,4 +183,19 @@ test('does not plan more potions than remaining need', () => {
   const eligible = ctx.drink.findEligiblePotions();
   assert.equal(eligible.length, 1);
   assert.equal(eligible[0].slotId, 0);
+});
+
+test('vault potion withdrawal uses backpack and extender capacity', () => {
+  const inventory = new Array(28).fill(-1);
+  for (let slot = 4; slot <= 19; slot++) inventory[slot] = 1000 + slot;
+
+  const blocked = setup({ inventory: [...inventory], backpackTier: 2 });
+  assert.equal(blocked.drink.onLoop(), 200);
+  assert.equal(blocked.calls.swaps.length, 0);
+  assert.match(blocked.activity.join('\n'), /inventory full/i);
+
+  const withExtender = setup({ inventory: [...inventory], backpackTier: 3 });
+  assert.equal(withExtender.drink.onLoop(), 200);
+  assert.equal(withExtender.calls.swaps.length, 1);
+  assert.equal(withExtender.inventory[20], ATTACK_POTION);
 });

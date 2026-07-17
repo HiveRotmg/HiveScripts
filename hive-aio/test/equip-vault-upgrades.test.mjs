@@ -3,6 +3,8 @@ import test from 'node:test';
 import { Hive } from '@hive/sdk';
 import { EquipVaultUpgradesController } from '../src/loot/EquipVaultUpgradesController.mjs';
 import { ScriptState } from '../src/state/ScriptState.mjs';
+import { resetAllVaultNavigation } from '../src/storage/navigate-to-vault.mjs';
+import { mockInventoryCapacity } from './helpers/mock-inventory-capacity.mjs';
 
 function gear(id, name, tier, slotType = 'weapon') {
   return { id, name, tier: String(tier), slotType };
@@ -16,7 +18,9 @@ function setup({
   enchantments = {},
   inventoryFill = [],
   mapName = 'Vault',
+  backpackTier = 1,
 } = {}) {
+  resetAllVaultNavigation();
   const state = new ScriptState();
   state.automationRunning = true;
   state.vaultOnStartDone = true;
@@ -39,7 +43,7 @@ function setup({
     spoilsChest: [],
     materialVault: [],
   };
-  const calls = { nexus: 0, swaps: [], slotSwaps: [], walks: [] };
+  const calls = { nexus: 0, enterVault: 0, swaps: [], slotSwaps: [], walks: [] };
   let currentMap = mapName;
 
   Hive.world.getName = () => currentMap;
@@ -50,7 +54,7 @@ function setup({
   Hive.self.distanceTo = () => 0.5;
   Hive.self.canEquip = (objectType) => compatible.includes(objectType);
   Hive.inventory.getAll = () => [...inventory];
-  Hive.inventory.getBackpack = () => 1;
+  mockInventoryCapacity(Hive, backpackTier);
   Hive.inventory.getEnchantments = (slot) => enchantments[slot] ?? null;
   Hive.inventory.getContainerSlots = (container) => storage[container] ?? [];
   Hive.inventory.getVaultSnapshot = () => ({
@@ -85,6 +89,7 @@ function setup({
   Hive.loot.getItemInfo = (objectType) => itemInfo.get(objectType) ?? null;
   Hive.walking.stopMoving = () => {};
   Hive.walking.nexus = () => { calls.nexus++; };
+  Hive.walking.enterVault = () => { calls.enterVault++; };
   Hive.walking.pathfindingWalkTo = (x, y) => {
     calls.walks.push({ x, y });
     return true;
@@ -114,17 +119,19 @@ test('does nothing when disabled or when vault has no upgrades', () => {
   assert.equal(ctx.equip.onLoop(), null);
 });
 
-test('from another map, nexuses while keeping upgrade intent sticky', () => {
+test('from another map, enterVault keeps upgrade intent sticky', () => {
   const ctx = setup({ mapName: 'Realm of the Mad God' });
   assert.equal(ctx.equip.onLoop(), 200);
   assert.equal(ctx.state.equipVaultUpgradesActive, true);
-  assert.equal(ctx.calls.nexus, 1);
+  assert.equal(ctx.calls.enterVault, 1);
+  assert.equal(ctx.calls.nexus, 0);
 });
 
-test('in Nexus, keeps intent active and leaves Vault entry to the tree', () => {
+test('in Nexus, enterVault is owned by the upgrade controller', () => {
   const ctx = setup({ mapName: 'Nexus' });
-  assert.equal(ctx.equip.onLoop(), null);
+  assert.equal(ctx.equip.onLoop(), 200);
   assert.equal(ctx.state.equipVaultUpgradesActive, true);
+  assert.equal(ctx.calls.enterVault, 1);
 });
 
 test('in Vault, withdraws and equips an ordinary upgrade via AutoLoot rules', () => {
@@ -183,4 +190,26 @@ test('stops cleanly when inventory is full and a buffer is required', () => {
   assert.equal(ctx.equip.onLoop(), null);
   assert.equal(ctx.state.equipVaultUpgradesActive, false);
   assert.equal(ctx.calls.swaps.length, 0);
+});
+
+test('vault upgrade buffer selection respects backpack extender capacity', () => {
+  const inventoryFill = [];
+  for (let slot = 4; slot <= 19; slot++) inventoryFill[slot - 4] = 1000 + slot;
+
+  const blocked = setup({
+    enchantments: { 0: { typeIds: [1, 2, 3] } },
+    inventoryFill,
+    backpackTier: 2,
+  });
+  assert.equal(blocked.equip.onLoop(), null);
+  assert.equal(blocked.calls.swaps.length, 0);
+
+  const withExtender = setup({
+    enchantments: { 0: { typeIds: [1, 2, 3] } },
+    inventoryFill,
+    backpackTier: 3,
+  });
+  assert.equal(withExtender.equip.onLoop(), 200);
+  assert.equal(withExtender.inventory[20], 102);
+  assert.equal(withExtender.inventory[0], 101);
 });

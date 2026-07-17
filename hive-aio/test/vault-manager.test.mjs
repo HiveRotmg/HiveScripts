@@ -3,11 +3,20 @@ import test from 'node:test';
 import { Hive } from '@hive/sdk';
 import { ScriptState } from '../src/state/ScriptState.mjs';
 import { VaultManager } from '../src/storage/VaultManager.mjs';
+import { resetAllVaultNavigation } from '../src/storage/navigate-to-vault.mjs';
+import { mockInventoryCapacity } from './helpers/mock-inventory-capacity.mjs';
 
 const ATTACK_POTION = 2591;
 const ORDINARY_ITEM = 5000;
 
-function setup({ inventory = new Array(28).fill(-1), potionSlots, vaultSlots, vaultPopulated = false } = {}) {
+function setup({
+  inventory = new Array(28).fill(-1),
+  potionSlots,
+  vaultSlots,
+  vaultPopulated = false,
+  backpackTier = 1,
+} = {}) {
+  resetAllVaultNavigation();
   const state = new ScriptState();
   state.automationRunning = true;
   const activity = [];
@@ -33,7 +42,7 @@ function setup({ inventory = new Array(28).fill(-1), potionSlots, vaultSlots, va
   Hive.world.getName = () => mapName;
   Hive.world.isNexus = () => mapName === 'Nexus';
   Hive.inventory.getAll = () => [...inventory];
-  Hive.inventory.getBackpack = () => 1;
+  mockInventoryCapacity(Hive, backpackTier);
   Hive.inventory.getContainerSlots = (container) => storage[container] ?? [];
   Hive.inventory.getVaultSnapshot = () => {
     if (mapName === 'Vault') hasVaultSnapshot = true;
@@ -74,22 +83,23 @@ test('startup visits Vault, waits five seconds for data, and returns to Nexus be
   try {
     ctx.setMap('Realm of the Mad God');
     assert.equal(ctx.manager.onLoop(), 200);
-    assert.equal(ctx.calls.nexus, 1);
+    assert.equal(ctx.calls.enterVault, 1);
+    assert.equal(ctx.calls.nexus, 0);
 
     now += 3000;
     ctx.setMap('Nexus');
     ctx.manager.onLoop();
-    assert.equal(ctx.calls.enterVault, 1);
+    assert.equal(ctx.calls.enterVault, 2);
 
     ctx.setMap('Vault');
     ctx.manager.onLoop();
     now += 4999;
     ctx.manager.onLoop();
-    assert.equal(ctx.calls.nexus, 1);
+    assert.equal(ctx.calls.nexus, 0);
 
     now += 1;
     ctx.manager.onLoop();
-    assert.equal(ctx.calls.nexus, 2);
+    assert.equal(ctx.calls.nexus, 1);
     assert.equal(ctx.state.vaultOnStartDone, false);
 
     ctx.setMap('Nexus');
@@ -267,7 +277,7 @@ test('the script remains in Vault while a requested potion is still carried', ()
   }
 });
 
-test('a full Realm inventory nexuses, deposits potions first, then deposits non-potions into the main Vault', () => {
+test('a full Realm inventory enters Vault via shared enterVault, deposits potions first, then non-potions', () => {
   const originalNow = Date.now;
   let now = 20_000;
   Date.now = () => now;
@@ -281,13 +291,14 @@ test('a full Realm inventory nexuses, deposits potions first, then deposits non-
 
   try {
     ctx.manager.onLoop();
-    assert.equal(ctx.calls.nexus, 1);
+    assert.equal(ctx.calls.enterVault, 1);
+    assert.equal(ctx.calls.nexus, 0);
     assert.equal(ctx.state.storageDepositNonPotions, true);
 
     now += 3000;
     ctx.setMap('Nexus');
     ctx.manager.onLoop();
-    assert.equal(ctx.calls.enterVault, 1);
+    assert.equal(ctx.calls.enterVault, 2);
 
     ctx.setMap('Vault');
     ctx.manager.onLoop();
@@ -318,4 +329,30 @@ test('a full inventory with no matching storage space remains blocked in Nexus',
   assert.equal(ctx.calls.enterVault, 0);
   assert.equal(ctx.state.storageBlocked, true);
   assert.match(ctx.activity.at(-1), /no matching storage space/i);
+});
+
+test('VaultManager deposit scans all and only usable inventory slots', () => {
+  const inventory = new Array(28).fill(-1);
+  inventory[0] = 999;
+  inventory[4] = ATTACK_POTION;
+  inventory[12] = ORDINARY_ITEM;
+  inventory[20] = ORDINARY_ITEM + 1;
+
+  const baseOnly = setup({ inventory: [...inventory], backpackTier: 1 });
+  assert.deepEqual(
+    baseOnly.manager.carriedSlots(inventory).filter(({ objectType }) => objectType >= 0).map(({ slotIndex }) => slotIndex),
+    [4],
+  );
+
+  const withBackpack = setup({ inventory: [...inventory], backpackTier: 2 });
+  assert.deepEqual(
+    withBackpack.manager.carriedSlots(inventory).filter(({ objectType }) => objectType >= 0).map(({ slotIndex }) => slotIndex),
+    [4, 12],
+  );
+
+  const withExtender = setup({ inventory: [...inventory], backpackTier: 3 });
+  assert.deepEqual(
+    withExtender.manager.carriedSlots(inventory).filter(({ objectType }) => objectType >= 0).map(({ slotIndex }) => slotIndex),
+    [4, 12, 20],
+  );
 });

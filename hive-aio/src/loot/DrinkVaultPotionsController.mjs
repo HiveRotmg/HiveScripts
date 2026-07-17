@@ -1,17 +1,18 @@
 import { Hive } from '@hive/sdk';
 import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combined-navigation-20260714';
+import { firstEmptyInventorySlot } from '../inventory/carried-slots.mjs';
 import { potionStat } from './AutoDrinkController.mjs?rev=vault-drink-20260717';
+import {
+  isVaultMap,
+  progressTowardVault,
+  resetVaultNavigation,
+} from '../storage/navigate-to-vault.mjs';
 import { stopMoving } from '../sdk/compat.mjs';
 
 const POLL_MS = 200;
-const ROUTE_RETRY_MS = 3000;
 const ACTION_TIMEOUT_MS = 8000;
 const BLOCK_MS = 5000;
 const CONTAINER_RANGE = 1.25;
-
-function isVaultMap() {
-  return String(Hive.world.getName?.() ?? '').trim().toLowerCase().includes('vault');
-}
 
 function slotKey(container, slotId) {
   return `${container}:${slotId}`;
@@ -22,16 +23,15 @@ function slotKey(container, slotId) {
  *
  * Responsibility split:
  * - Setting `drinkVaultPotionsEnabled` gates whether this task may start.
- * - Intent `drinkVaultPotionsActive` preempts realm/dungeon work while running.
- * - Nexus tree (`VaultEnabledLeaf`) walks to / enters the Vault entrance.
- * - This controller handles non-Nexus routing plus Vault retrieve/drink.
+ * - Intent `drinkVaultPotionsActive` preempts realm/dungeon loot while running.
+ * - Vault entry is owned by `progressTowardVault` / `Hive.walking.enterVault`.
+ * - This controller handles container locate / withdraw / drink once inside.
  */
 export class DrinkVaultPotionsController {
   constructor(controller) {
     this.controller = controller;
     this.activity = 'Drink Vault Potions';
     this.active = null;
-    this.lastRouteCommandAt = 0;
     this.blockedUntil = new Map();
     this.inventoryFullStop = false;
   }
@@ -40,7 +40,7 @@ export class DrinkVaultPotionsController {
     this.clearActive();
     this.blockedUntil.clear();
     this.inventoryFullStop = false;
-    this.lastRouteCommandAt = 0;
+    resetVaultNavigation('drink-vault-potions');
   }
 
   getActivityLabel() {
@@ -59,7 +59,7 @@ export class DrinkVaultPotionsController {
     this.pruneBlocks();
 
     if (this.inventoryFullStop) {
-      if (this.firstEmptyInventorySlot() !== null) this.inventoryFullStop = false;
+      if (firstEmptyInventorySlot() !== null) this.inventoryFullStop = false;
       else {
         this.clearActive();
         return null;
@@ -104,14 +104,12 @@ export class DrinkVaultPotionsController {
     }
 
     if (!isVaultMap()) {
-      if (Hive.world.isNexus()) {
-        // Nexus tree owns Vault entrance navigation while intent is sticky.
-        this.activity = 'Enter Vault';
-        return null;
-      }
-      this.activity = 'Return To Nexus';
-      this.routeToNexus('Vault potions: returning to Nexus');
-      return POLL_MS;
+      this.activity = 'Enter Vault';
+      return progressTowardVault({
+        key: 'drink-vault-potions',
+        message: 'Vault potions: entering Vault',
+        appendActivity: (message) => this.controller.appendActivity(message),
+      });
     }
 
     // Once withdrawn (or drinking from inventory), do not require the vault slot to still exist.
@@ -158,7 +156,7 @@ export class DrinkVaultPotionsController {
     }
 
     stopMoving();
-    const inventorySlot = this.firstEmptyInventorySlot();
+    const inventorySlot = firstEmptyInventorySlot();
     if (inventorySlot === null) {
       this.inventoryFullStop = true;
       this.controller.appendActivity('Vault potions: inventory full; stopping');
@@ -388,15 +386,6 @@ export class DrinkVaultPotionsController {
     return Number.isFinite(current) && Number.isFinite(cap) && cap > 0 && current < cap;
   }
 
-  firstEmptyInventorySlot(inventory = Hive.inventory.getAll()) {
-    const backpack = Number(Hive.inventory.getBackpack?.() ?? 1) || 1;
-    const maximumSlot = backpack >= 3 ? 27 : backpack >= 2 ? 19 : 11;
-    for (let slotIndex = 4; slotIndex <= maximumSlot; slotIndex++) {
-      if ((inventory[slotIndex] ?? -1) < 0) return slotIndex;
-    }
-    return null;
-  }
-
   vaultSnapshot() {
     try {
       if (typeof Hive.inventory.getVaultSnapshot === 'function') return Hive.inventory.getVaultSnapshot();
@@ -405,14 +394,6 @@ export class DrinkVaultPotionsController {
     } catch {
       return null;
     }
-  }
-
-  routeToNexus(message) {
-    if (Date.now() - this.lastRouteCommandAt < ROUTE_RETRY_MS) return;
-    this.lastRouteCommandAt = Date.now();
-    stopMoving();
-    Hive.walking.nexus();
-    if (message) this.controller.appendActivity(message);
   }
 
   finishPotion(message) {

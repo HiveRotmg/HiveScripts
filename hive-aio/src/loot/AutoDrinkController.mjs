@@ -1,5 +1,6 @@
 import { Hive } from '@hive/sdk';
 import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combined-navigation-20260714';
+import { firstEmptyInventorySlot } from '../inventory/carried-slots.mjs';
 import { stopMoving } from '../sdk/compat.mjs';
 
 const ACTION_DELAY_MS = 200;
@@ -65,7 +66,7 @@ export class AutoDrinkController {
     if (typeof Hive.self.getBaseStats !== 'function' || typeof Hive.self.getStatCaps !== 'function') return null;
     const base = Hive.self.getBaseStats();
     const caps = Hive.self.getStatCaps();
-    const destinationSlot = this.firstEmptyInventorySlot();
+    const destinationSlot = firstEmptyInventorySlot();
     const candidates = [];
     for (const bag of Hive.loot.getBags()) {
       const distance = Hive.self.distanceTo(bag.position);
@@ -108,7 +109,7 @@ export class AutoDrinkController {
 
     if (action.mode === 'drink' && !this.needsStat(base, caps, action.stat.key)) {
       const destinationSlot = this.controller.state.pickupPotionsEnabled
-        ? this.firstEmptyInventorySlot(inventory)
+        ? firstEmptyInventorySlot(inventory)
         : null;
       if (action.phase !== 'wait-consume' && liveBag && liveItem && destinationSlot !== null) {
         action.mode = 'pickup';
@@ -166,15 +167,6 @@ export class AutoDrinkController {
     const current = Number(base?.[key]);
     const cap = Number(caps?.[key]);
     return Number.isFinite(current) && Number.isFinite(cap) && cap > 0 && current < cap;
-  }
-
-  firstEmptyInventorySlot(inventory = Hive.inventory.getAll()) {
-    const backpack = Number(Hive.inventory.getBackpack()) || 1;
-    const maximumSlot = backpack >= 3 ? 27 : backpack >= 2 ? 19 : 11;
-    for (let slotIndex = 4; slotIndex <= maximumSlot; slotIndex++) {
-      if ((inventory[slotIndex] ?? -1) < 0) return slotIndex;
-    }
-    return null;
   }
 
   finish(action, message) {

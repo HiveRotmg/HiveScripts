@@ -1,6 +1,7 @@
 import { Hive } from '@hive/sdk';
 import { isRealmMap } from '../world/map-kind.mjs';
 import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combined-navigation-20260714';
+import { firstEmptyInventorySlot } from '../inventory/carried-slots.mjs';
 import { stopMoving } from '../sdk/compat.mjs';
 
 export const EQUIPMENT = Object.freeze({
@@ -174,7 +175,7 @@ export class AutoLootController {
     }
 
     const inventory = Hive.inventory.getAll();
-    const emptySlot = this.firstEmptyInventorySlot(inventory);
+    const emptySlot = firstEmptyInventorySlot(inventory);
     const candidates = [];
 
     for (const bag of Hive.loot.getBags()) {
@@ -294,18 +295,5 @@ export class AutoLootController {
     const key = EQUIPMENT[category].thresholdKey;
     const value = Number(this.controller.state[key]);
     return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 99;
-  }
-
-  firstEmptyInventorySlot(inventory) {
-    let maximum = 11;
-    try {
-      if (Hive.inventory.getBackpack() >= 2) maximum = 19;
-    } catch {
-      // Main inventory is still usable when backpack state is unavailable.
-    }
-    for (let slot = 4; slot <= maximum; slot++) {
-      if ((inventory[slot] ?? -1) < 0) return slot;
-    }
-    return null;
   }
 }

@@ -1,14 +1,19 @@
 import { Hive } from '@hive/sdk';
 import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combined-navigation-20260714';
+import { firstEmptyInventorySlot } from '../inventory/carried-slots.mjs';
 import {
   compareEquipmentCandidates,
   EQUIPMENT,
   evaluateEquipmentItem,
 } from './AutoLootController.mjs?rev=equip-vault-upgrades-20260717';
+import {
+  isVaultMap,
+  progressTowardVault,
+  resetVaultNavigation,
+} from '../storage/navigate-to-vault.mjs';
 import { stopMoving } from '../sdk/compat.mjs';
 
 const POLL_MS = 200;
-const ROUTE_RETRY_MS = 3000;
 const ACTION_TIMEOUT_MS = 8000;
 const BLOCK_MS = 5000;
 const CONTAINER_RANGE = 1.25;
@@ -21,10 +26,6 @@ const GEAR_CONTAINERS = Object.freeze([
   { container: 'materialVault', snapshotKey: 'material', chestsKey: 'material', objectIdKey: 'material' },
 ]);
 
-function isVaultMap() {
-  return String(Hive.world.getName?.() ?? '').trim().toLowerCase().includes('vault');
-}
-
 function slotKey(container, slotId) {
   return `${container}:${slotId}`;
 }
@@ -34,16 +35,15 @@ function slotKey(container, slotId) {
  *
  * Responsibility split:
  * - Setting `equipVaultUpgradesEnabled` gates whether this task may start.
- * - Intent `equipVaultUpgradesActive` preempts realm/dungeon work while running.
- * - Nexus tree (`VaultEnabledLeaf`) walks to / enters the Vault entrance.
- * - This controller handles non-Nexus routing plus Vault withdraw/equip.
+ * - Intent `equipVaultUpgradesActive` preempts realm/dungeon loot while running.
+ * - Vault entry is owned by `progressTowardVault` / `Hive.walking.enterVault`.
+ * - This controller handles container locate / withdraw / equip once inside.
  */
 export class EquipVaultUpgradesController {
   constructor(controller) {
     this.controller = controller;
     this.activity = 'Equip Vault Upgrades';
     this.active = null;
-    this.lastRouteCommandAt = 0;
     this.blockedUntil = new Map();
     this.inventoryFullStop = false;
   }
@@ -52,7 +52,7 @@ export class EquipVaultUpgradesController {
     this.clearActive();
     this.blockedUntil.clear();
     this.inventoryFullStop = false;
-    this.lastRouteCommandAt = 0;
+    resetVaultNavigation('equip-vault-upgrades');
   }
 
   getActivityLabel() {
@@ -70,7 +70,7 @@ export class EquipVaultUpgradesController {
     this.pruneBlocks();
 
     if (this.inventoryFullStop) {
-      if (this.firstEmptyInventorySlot() !== null) this.inventoryFullStop = false;
+      if (firstEmptyInventorySlot() !== null) this.inventoryFullStop = false;
       else {
         this.clearActive();
         return null;
@@ -109,13 +109,12 @@ export class EquipVaultUpgradesController {
     }
 
     if (!isVaultMap()) {
-      if (Hive.world.isNexus()) {
-        this.activity = 'Enter Vault';
-        return null;
-      }
-      this.activity = 'Return To Nexus';
-      this.routeToNexus('Vault upgrades: returning to Nexus');
-      return POLL_MS;
+      this.activity = 'Enter Vault';
+      return progressTowardVault({
+        key: 'equip-vault-upgrades',
+        message: 'Vault upgrades: entering Vault',
+        appendActivity: (message) => this.controller.appendActivity(message),
+      });
     }
 
     if (action.phase === 'wait-withdraw' || action.phase === 'wait-buffer') {
@@ -175,7 +174,7 @@ export class EquipVaultUpgradesController {
     stopMoving();
 
     if (action.requiresBuffer) {
-      const bufferSlot = this.firstEmptyInventorySlot(inventory);
+      const bufferSlot = firstEmptyInventorySlot(inventory);
       if (bufferSlot === null) {
         this.inventoryFullStop = true;
         this.controller.appendActivity('Vault upgrades: inventory full; stopping');
@@ -250,7 +249,7 @@ export class EquipVaultUpgradesController {
 
   findEligibleUpgrades() {
     const inventory = Hive.inventory.getAll();
-    const emptySlot = this.firstEmptyInventorySlot(inventory);
+    const emptySlot = firstEmptyInventorySlot(inventory);
     const now = Date.now();
     const candidates = [];
     const bestBySlot = new Map();
@@ -367,21 +366,6 @@ export class EquipVaultUpgradesController {
     return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 99;
   }
 
-  firstEmptyInventorySlot(inventory = Hive.inventory.getAll()) {
-    let maximum = 11;
-    try {
-      const backpack = Number(Hive.inventory.getBackpack?.() ?? 1) || 1;
-      if (backpack >= 3) maximum = 27;
-      else if (backpack >= 2) maximum = 19;
-    } catch {
-      // Main inventory remains usable when backpack state is unavailable.
-    }
-    for (let slot = 4; slot <= maximum; slot++) {
-      if ((inventory[slot] ?? -1) < 0) return slot;
-    }
-    return null;
-  }
-
   vaultSnapshot() {
     try {
       if (typeof Hive.inventory.getVaultSnapshot === 'function') return Hive.inventory.getVaultSnapshot();
@@ -390,14 +374,6 @@ export class EquipVaultUpgradesController {
     } catch {
       return null;
     }
-  }
-
-  routeToNexus(message) {
-    if (Date.now() - this.lastRouteCommandAt < ROUTE_RETRY_MS) return;
-    this.lastRouteCommandAt = Date.now();
-    stopMoving();
-    Hive.walking.nexus();
-    if (message) this.controller.appendActivity(message);
   }
 
   finishUpgrade(action) {

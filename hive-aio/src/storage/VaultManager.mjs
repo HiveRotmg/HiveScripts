@@ -1,5 +1,11 @@
 import { Hive } from '@hive/sdk';
 import { potionStat } from '../loot/AutoDrinkController.mjs?rev=vault-storage-20260715';
+import { getUsableInventorySlotIds } from '../inventory/carried-slots.mjs';
+import {
+  isVaultMap,
+  progressTowardVault,
+  resetVaultNavigation,
+} from './navigate-to-vault.mjs';
 import { stopMoving } from '../sdk/compat.mjs';
 
 const POLL_MS = 200;
@@ -8,21 +14,6 @@ const STARTUP_POPULATE_MS = 5000;
 const TRANSFER_TIMEOUT_MS = 25000;
 const TRANSFER_SETTLE_MS = 750;
 const NO_DEPOSIT_CONFIRM_MS = 2000;
-
-function isVaultMap() {
-  return Hive.world.getName().trim().toLowerCase().includes('vault');
-}
-
-function carriedMaximumSlot() {
-  try {
-    const backpack = Number(Hive.inventory.getBackpack()) || 1;
-    if (backpack >= 3) return 27;
-    if (backpack >= 2) return 19;
-  } catch {
-    // The main inventory remains usable before backpack telemetry arrives.
-  }
-  return 11;
-}
 
 export class VaultManager {
   constructor(controller) {
@@ -45,6 +36,7 @@ export class VaultManager {
     this.reservedDestinations.clear();
     this.lastRouteCommandAt = 0;
     this.lastBlockedMessage = '';
+    resetVaultNavigation('vault-manager');
     this.phase = this.controller.state.vaultOnStartDone ? 'idle' : 'startup-route';
     if (!this.controller.state.vaultOnStartDone && this.hasCompleteVaultSnapshot()) {
       this.controller.state.vaultOnStartDone = true;
@@ -60,6 +52,7 @@ export class VaultManager {
     this.noDepositSince = 0;
     this.reservedDestinations.clear();
     this.lastRouteCommandAt = 0;
+    resetVaultNavigation('vault-manager');
   }
 
   getActivityLabel() {
@@ -106,23 +99,20 @@ export class VaultManager {
       return POLL_MS;
     }
 
-    if (Hive.world.isNexus()) {
-      if (this.phase === 'startup-return') {
-        this.controller.state.vaultOnStartDone = true;
-        this.phase = 'idle';
-        this.activity = 'Vault Ready';
-        this.controller.appendActivity('Vault initialization complete');
-        return POLL_MS;
-      }
-
-      this.activity = 'Enter Vault';
-      this.enterVault('Entering Vault to load storage data');
+    if (Hive.world.isNexus() && this.phase === 'startup-return') {
+      this.controller.state.vaultOnStartDone = true;
+      this.phase = 'idle';
+      this.activity = 'Vault Ready';
+      this.controller.appendActivity('Vault initialization complete');
       return POLL_MS;
     }
 
-    this.activity = 'Return To Nexus';
-    this.routeToNexus('Returning to Nexus for Vault initialization');
-    return POLL_MS;
+    this.activity = 'Enter Vault';
+    return progressTowardVault({
+      key: 'vault-manager',
+      message: 'Entering Vault to load storage data',
+      appendActivity: (message) => this.controller.appendActivity(message),
+    });
   }
 
   runDeposits() {
@@ -135,10 +125,13 @@ export class VaultManager {
       this.controller.state.storageDepositRequested = true;
       this.controller.state.storageDepositNonPotions = true;
       this.controller.state.storageBlocked = false;
-      this.phase = 'deposit-route-nexus';
-      this.activity = 'Nexus Full Inventory';
-      this.routeToNexus('Inventory full; nexusing to deposit items');
-      return POLL_MS;
+      this.phase = 'deposit-enter-vault';
+      this.activity = 'Enter Vault For Deposit';
+      return progressTowardVault({
+        key: 'vault-manager',
+        message: 'Inventory full; entering Vault to deposit items',
+        appendActivity: (message) => this.controller.appendActivity(message),
+      });
     }
 
     if (Hive.world.isNexus()) {
@@ -170,8 +163,11 @@ export class VaultManager {
         this.controller.state.storageBlocked = false;
         this.phase = 'deposit-enter-vault';
         this.activity = 'Enter Vault For Deposit';
-        this.enterVault('Storage deposit needed; entering Vault');
-        return POLL_MS;
+        return progressTowardVault({
+          key: 'vault-manager',
+          message: 'Storage deposit needed; entering Vault',
+          appendActivity: (message) => this.controller.appendActivity(message),
+        });
       }
       return null;
     }
@@ -302,12 +298,10 @@ export class VaultManager {
   }
 
   carriedSlots(inventory) {
-    const maximumSlot = carriedMaximumSlot();
-    const result = [];
-    for (let slotIndex = 4; slotIndex <= maximumSlot; slotIndex++) {
-      result.push({ slotIndex, objectType: Number(inventory[slotIndex] ?? -1) });
-    }
-    return result;
+    return getUsableInventorySlotIds().map((slotIndex) => ({
+      slotIndex,
+      objectType: Number(inventory[slotIndex] ?? -1),
+    }));
   }
 
   depositableCount(inventory, destinationContainer) {
@@ -375,14 +369,6 @@ export class VaultManager {
 
   hasCompleteVaultSnapshot() {
     return this.vaultSnapshot()?.complete === true;
-  }
-
-  enterVault(message) {
-    if (Date.now() - this.lastRouteCommandAt < ROUTE_RETRY_MS) return;
-    this.lastRouteCommandAt = Date.now();
-    stopMoving();
-    Hive.walking.enterVault();
-    if (message) this.controller.appendActivity(message);
   }
 
   routeToNexus(message, force = false) {

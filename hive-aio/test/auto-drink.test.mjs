@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Hive } from '@hive/sdk';
 import { AutoDrinkController, potionStat } from '../src/loot/AutoDrinkController.mjs';
 import { ScriptState } from '../src/state/ScriptState.mjs';
+import { mockInventoryCapacity } from './helpers/mock-inventory-capacity.mjs';
 
 function setup({
   attack = 40,
@@ -59,7 +60,7 @@ function setup({
     return true;
   };
   Hive.inventory.getAll = () => [...inventory];
-  Hive.inventory.getBackpack = () => backpackTier;
+  mockInventoryCapacity(Hive, backpackTier);
   Hive.walking.stopMoving = () => {};
   Hive.walking.pathfindingWalkTo = (x, y) => {
     walks.push({ x, y });

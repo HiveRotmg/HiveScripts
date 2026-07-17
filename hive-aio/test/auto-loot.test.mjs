@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Hive } from '@hive/sdk';
 import { AutoLootController } from '../src/loot/AutoLootController.mjs';
 import { ScriptState } from '../src/state/ScriptState.mjs';
+import { mockInventoryCapacity } from './helpers/mock-inventory-capacity.mjs';
 
 function gear(id, name, tier, slotType = 'weapon') {
   return { id, name, tier: String(tier), slotType };
@@ -48,7 +49,7 @@ function setup({
   Hive.self.distanceTo = (target) => Math.hypot(target.x - position.x, target.y - position.y);
   Hive.self.canEquip = (objectType) => compatible.includes(objectType);
   Hive.inventory.getAll = () => [...inventory];
-  Hive.inventory.getBackpack = () => backpack;
+  mockInventoryCapacity(Hive, backpack);
   Hive.inventory.getEnchantments = (slot) => enchantments[slot] ?? null;
   Hive.inventory.swapSlots = (from, to) => {
     swaps.push([from, to]);
@@ -215,6 +216,30 @@ test('a full inventory still permits an unprotected direct upgrade but blocks a 
 
   assert.equal(protectedGear.autoLoot.onLoop(), null);
   assert.equal(protectedGear.inventory[0], 101);
+});
+
+test('auto loot uses backpack extender slots when buffering a protected upgrade', () => {
+  const inventoryFill = [];
+  for (let slot = 4; slot <= 19; slot++) inventoryFill[slot - 4] = 1000 + slot;
+
+  const ctx = setup({
+    equipped: [101, -1, -1, -1],
+    metadata: [gear(101, 'Rare T1 Staff', 1), gear(102, 'T2 Staff', 2)],
+    bagItems: [102],
+    compatible: [102],
+    enchantments: { 0: { typeIds: [1, 2, 3] } },
+    inventoryFill,
+    backpack: 3,
+  });
+
+  // Already in range: withdraw into extender slot 20, then equip.
+  ctx.autoLoot.onLoop();
+  assert.equal(ctx.inventory[20], 102);
+  assert.equal(ctx.inventory[0], 101);
+
+  ctx.autoLoot.onLoop();
+  assert.equal(ctx.inventory[0], 102);
+  assert.equal(ctx.inventory[20], 101);
 });
 
 test('same-tier attack and dexterity rings replace lower-priority rings', () => {

@@ -96,7 +96,8 @@ export default class HiveAIO extends TreeScript {
       return vaultUpgradeDelay;
     }
 
-    // While retrieving vault potions/upgrades, skip bag loot/drink and let Nexus enter Vault.
+    // Sticky vault intents: skip bag loot/deposit. Tree may still run as a
+    // Nexus backup (`VaultEnabledLeaf` → shared progressTowardVault).
     if (this.state.drinkVaultPotionsActive || this.state.equipVaultUpgradesActive) {
       const delay = super.onLoop();
       this.refreshPanel();
