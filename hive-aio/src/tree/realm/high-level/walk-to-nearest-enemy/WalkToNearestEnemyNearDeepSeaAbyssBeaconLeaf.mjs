@@ -1,6 +1,6 @@
 import { Leaf } from '@hive/sdk';
 import { LIMITS, TIMING } from '../../../../config/constants.mjs?rev=realm-exploration-20260715';
-import { EnemyNavigator } from '../../../../movement/pathfinding.mjs?rev=distant-enemy-progress-20260716';
+import { EnemyNavigator } from '../../../../movement/pathfinding.mjs?rev=direct-enemy-pathfinding-20260716';
 import { CircularBeaconExplorer } from '../../../../movement/exploration.mjs?rev=realm-exploration-20260715';
 import {
   findNearestDeepSeaAbyssBeacon,
@@ -16,7 +16,7 @@ export class WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf extends Leaf {
       controller,
       LIMITS.deepSeaExplorationRadiusTiles,
     );
-    this.enemyNavigator = new EnemyNavigator(controller);
+    this.enemyNavigator = new EnemyNavigator(controller, enemyTarget);
   }
 
   isValid() {

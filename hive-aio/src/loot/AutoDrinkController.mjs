@@ -1,5 +1,6 @@
 import { Hive } from '@hive/sdk';
 import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combined-navigation-20260714';
+import { stopMoving } from '../sdk/compat.mjs';
 
 const ACTION_DELAY_MS = 200;
 const ACTION_TIMEOUT_MS = 6000;
@@ -49,7 +50,7 @@ export class AutoDrinkController {
     const plan = this.findPlan();
     if (!plan) return null;
 
-    Hive.walking.stopMoving();
+    stopMoving();
     this.controller.autoLoot?.reset();
     this.active = { ...plan, phase: 'approach', startedAt: Date.now() };
     return this.continueActive();
@@ -61,6 +62,7 @@ export class AutoDrinkController {
       if (until <= now) this.blockedUntil.delete(key);
     }
 
+    if (typeof Hive.self.getBaseStats !== 'function' || typeof Hive.self.getStatCaps !== 'function') return null;
     const base = Hive.self.getBaseStats();
     const caps = Hive.self.getStatCaps();
     const destinationSlot = this.firstEmptyInventorySlot();
@@ -95,8 +97,8 @@ export class AutoDrinkController {
     const liveBag = Hive.loot.getBags().find((bag) => bag.objectId === action.bag.objectId);
     const liveItem = liveBag?.items.find((item) =>
       item.slotIndex === action.item.slotIndex && item.objectType === action.item.objectType);
-    const base = Hive.self.getBaseStats();
-    const caps = Hive.self.getStatCaps();
+    const base = Hive.self.getBaseStats?.() ?? {};
+    const caps = Hive.self.getStatCaps?.() ?? {};
     const inventory = Hive.inventory.getAll();
 
     if (action.mode === 'pickup' && inventory[action.destinationSlot] === action.item.objectType) {
@@ -137,7 +139,7 @@ export class AutoDrinkController {
       if (Hive.self.distanceTo(liveBag.position) > 1) {
         pathfindingWalkTo(this.controller, liveBag.position.x, liveBag.position.y);
       } else {
-        Hive.walking.stopMoving();
+        stopMoving();
         const accepted = action.mode === 'drink'
           ? Hive.loot.useFromBag(liveBag, liveItem.slotIndex)
           : Hive.loot.pickupToSlot(liveBag, liveItem.slotIndex, action.destinationSlot);

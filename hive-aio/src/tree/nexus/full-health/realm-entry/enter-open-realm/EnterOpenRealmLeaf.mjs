@@ -1,6 +1,7 @@
 import { Hive, Leaf } from '@hive/sdk';
 import { LIMITS, TIMING } from '../../../../../config/constants.mjs?rev=portal-dodge-entry-20260714';
 import { pathfindingWalkTo } from '../../../../../movement/pathfinding.mjs?rev=combined-navigation-20260714';
+import { stopMoving } from '../../../../../sdk/compat.mjs';
 
 function distanceSquared(from, to) {
   const deltaX = to.x - from.x;
@@ -44,7 +45,7 @@ export class EnterOpenRealmLeaf extends Leaf {
       return TIMING.nexusPollMs;
     }
 
-    Hive.walking.stopMoving();
+    stopMoving();
     if (targetChanged || this.progress.portalInRangeSince === null) {
       this.progress.portalTargetId = portal.objectId;
       this.progress.portalInRangeSince = now;

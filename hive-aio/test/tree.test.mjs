@@ -3,6 +3,7 @@ import test from 'node:test';
 import { Hive, TreeScript } from '@hive/sdk';
 import { LIMITS, NEXUS_HEALING_WAYPOINT, NEXUS_PORTAL_WAYPOINT, TIMING } from '../src/config/constants.mjs';
 import { EnemyNavigator, pathfindingWalkTo } from '../src/movement/pathfinding.mjs';
+import { PersistentEnemyTarget } from '../src/tree/realm/PersistentEnemyTarget.mjs';
 import { createTree } from '../src/tree/create-tree.mjs';
 
 function createController() {
@@ -26,10 +27,6 @@ function activeNames(tree) {
   return tree.getActivePath().map((node) => node.getName());
 }
 
-const COMBAT_PATH_OPTIONS = Object.freeze({
-  minimumEnemyDistance: LIMITS.enemyExclusionDistanceTiles,
-  preferredRangeRatio: LIMITS.preferredCombatRangeRatio,
-});
 const DODGE_PATH_OPTIONS = Object.freeze({
   safeWalk: true,
   projectileJump: true,
@@ -97,7 +94,16 @@ function setWorld({
   Hive.world.objects.getBeacons = () => beacons;
   Hive.world.getDimensions = () => dimensions;
   Hive.enemies.getNearest = () => null;
+  Hive.enemies.getAll = () => [];
+  Hive.enemies.getById = () => null;
   Hive.walking.hasReached = () => reached;
+  Hive.walking.isMoving = () => true;
+  Hive.walking.getNavigationState = () => ({
+    status: 'moving',
+    target: null,
+    path: [],
+    dodgeDecision: null,
+  });
 }
 
 test('tree selects every requested Nexus and Realm path', () => {
@@ -118,10 +124,28 @@ test('tree selects every requested Nexus and Realm path', () => {
     'Root',
     'Nexus',
     'Nexus Full Health',
-    'Vault Enabled Placeholder',
+    'Enter Vault',
   ]);
 
   controller.state.vault = false;
+  controller.state.drinkVaultPotionsActive = true;
+  assert.deepEqual(activeNames(tree), [
+    'Root',
+    'Nexus',
+    'Nexus Full Health',
+    'Enter Vault',
+  ]);
+
+  controller.state.drinkVaultPotionsActive = false;
+  controller.state.equipVaultUpgradesActive = true;
+  assert.deepEqual(activeNames(tree), [
+    'Root',
+    'Nexus',
+    'Nexus Full Health',
+    'Enter Vault',
+  ]);
+
+  controller.state.equipVaultUpgradesActive = false;
   setWorld({ mapName: 'Nexus', hp: 99, maxHp: 100 });
   assert.deepEqual(activeNames(tree), [
     'Root',
@@ -273,6 +297,7 @@ test("Oryx's Castle safety leaf stops movement and returns to Nexus", () => {
   try {
     assert.deepEqual(activeNames(tree), [
       'Root',
+      'Dungeons',
       "Oryx's Castle",
       "Return To Nexus From Oryx's Castle",
     ]);
@@ -470,13 +495,13 @@ test('low-level Realm leaf walks toward the nearest enemy', () => {
     name: 'Enemy',
     position: { x: 21, y: 34 },
   });
-  Hive.walking.pathfindingWalkToCombatTarget = (x, y, options) => {
-    movement.push({ x, y, options });
+  Hive.walking.pathfindingWalkTo = (x, y, arriveThreshold) => {
+    movement.push({ x, y, arriveThreshold });
     return true;
   };
 
   assert.equal(tree.onLoop(), TIMING.enemyRefreshMs);
-  assert.deepEqual(movement, [{ x: 21, y: 34, options: COMBAT_PATH_OPTIONS }]);
+  assert.deepEqual(movement, [{ x: 21, y: 34, arriveThreshold: 1 }]);
 });
 
 test('levels 1 through 8 walk toward the map center when no enemy is visible', () => {
@@ -538,12 +563,12 @@ test('levels 9 through 13 explore around the selected beacon until an enemy appe
     name: 'Enemy',
     position: { x: 220, y: 320 },
   });
-  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
-    movement.push({ x, y, combat: true });
-    return true;
-  };
   tree.onLoop();
-  assert.deepEqual(movement.at(-1), { x: 220, y: 320, combat: true });
+  assert.deepEqual(movement.at(-1), {
+    x: 220,
+    y: 320,
+    arriveThreshold: LIMITS.enemyApproachTolerance,
+  });
 });
 
 test('levels 14 through 20 explore around the deep-sea beacon with dodge ownership', () => {
@@ -580,70 +605,15 @@ test('levels 14 through 20 explore around the deep-sea beacon with dodge ownersh
   }]);
 });
 
-test('distant Realm enemies use stable exploratory movement before combat-range pathfinding', () => {
+test('enemy navigation paths directly to the enemy and replans moved targets every 250 ms', () => {
   const controller = createController();
   controller.state.autoDodgeEnabled = true;
-  const { tree } = createTestTree(controller);
-  const position = { x: 400, y: 500 };
+  const navigator = new EnemyNavigator(controller);
   const enemy = {
     objectId: 70,
     name: 'Organ Harvester',
     position: { x: 553, y: 500 },
   };
-  const movement = [];
-
-  setWorld({
-    mapName: 'Realm of the Mad God',
-    level: 20,
-    position,
-    baseStats: { ...DEFAULT_STAT_CAPS, attack: DEFAULT_STAT_CAPS.attack - 1 },
-    beacons: [{
-      objectId: 60,
-      objectType: 0xCEFA,
-      name: 'Deep Sea Abyss Beacon (Veteran)',
-      position: { x: 400, y: 500 },
-    }],
-  });
-  Hive.enemies.getNearest = () => enemy;
-  Hive.enemies.getById = () => enemy;
-  Hive.walking.navigateTo = (x, y, options) => {
-    movement.push({ action: 'approach', x, y, options });
-    return true;
-  };
-  Hive.walking.navigateToCombatTarget = (x, y, options) => {
-    movement.push({ action: 'combat', x, y, options });
-    return true;
-  };
-  Hive.walking.isMoving = () => true;
-
-  tree.onLoop();
-  enemy.position.x += 1;
-  tree.onLoop();
-  assert.deepEqual(movement, [{
-    action: 'approach',
-    x: 424,
-    y: 500,
-    options: {
-      arriveThreshold: LIMITS.distantEnemyApproachToleranceTiles,
-      ...DODGE_PATH_OPTIONS,
-    },
-  }]);
-
-  position.x = 520;
-  tree.onLoop();
-  assert.deepEqual(movement.at(-1), {
-    action: 'combat',
-    x: 554,
-    y: 500,
-    options: { ...COMBAT_PATH_OPTIONS, ...DODGE_PATH_OPTIONS },
-  });
-});
-
-test('distant enemy navigation replaces an accepted waypoint after no progress', () => {
-  const controller = createController();
-  controller.state.autoDodgeEnabled = true;
-  const navigator = new EnemyNavigator(controller);
-  const enemy = { objectId: 70, position: { x: 553, y: 500 } };
   const movement = [];
   const originalNow = Date.now;
   let now = 1_000;
@@ -653,53 +623,97 @@ test('distant enemy navigation replaces an accepted waypoint after no progress',
     level: 20,
     position: { x: 400, y: 500 },
   });
-  Date.now = () => now;
-  Hive.walking.isMoving = () => true;
-  Hive.walking.navigateTo = (x, y) => {
-    movement.push({ x, y });
+  Hive.walking.navigateTo = (x, y, options) => {
+    movement.push({ x, y, options });
     return true;
   };
+  Date.now = () => now;
 
   try {
     assert.equal(navigator.walk(enemy), true);
     assert.equal(navigator.walk(enemy), true);
     assert.equal(movement.length, 1);
 
-    now += 3_000;
+    enemy.position.x += 1;
+    now += 249;
+    assert.equal(navigator.walk(enemy), true);
+    assert.equal(movement.length, 1);
+
+    now += 1;
     assert.equal(navigator.walk(enemy), true);
     assert.equal(movement.length, 2);
-    assert.notDeepEqual(movement[1], movement[0]);
-    assert.ok(Math.abs(
-      Math.hypot(movement[1].x - 400, movement[1].y - 500)
-        - LIMITS.distantEnemyApproachStepTiles,
-    ) < 1e-9);
+    assert.deepEqual(movement[1], {
+      x: 554,
+      y: 500,
+      options: { arriveThreshold: LIMITS.enemyApproachTolerance, ...DODGE_PATH_OPTIONS },
+    });
   } finally {
     Date.now = originalNow;
   }
 });
 
-test('distant enemy navigation clears an immediately rejected waypoint', () => {
+test('enemy navigation resumes after another controller stops movement', () => {
   const controller = createController();
   controller.state.autoDodgeEnabled = true;
   const navigator = new EnemyNavigator(controller);
-  const enemy = { objectId: 70, position: { x: 553, y: 500 } };
+  const enemy = { objectId: 70, name: 'Enemy', position: { x: 20, y: 10 } };
   const movement = [];
+  let moving = true;
 
   setWorld({
     mapName: 'Realm of the Mad God',
-    level: 20,
-    position: { x: 400, y: 500 },
+    position: { x: 0, y: 0 },
   });
-  Hive.walking.isMoving = () => false;
-  Hive.walking.navigateTo = (x, y) => {
-    movement.push({ x, y });
-    return movement.length > 1;
+  Hive.walking.isMoving = () => moving;
+  Hive.walking.getNavigationState = () => ({
+    status: moving ? 'moving' : 'idle',
+    target: null,
+    path: [],
+    dodgeDecision: null,
+  });
+  Hive.walking.navigateTo = (x, y, options) => {
+    movement.push({ x, y, options });
+    moving = true;
+    return true;
   };
 
-  assert.equal(navigator.walk(enemy), false);
   assert.equal(navigator.walk(enemy), true);
+  moving = false;
+  assert.equal(navigator.walk(enemy), true);
+
   assert.equal(movement.length, 2);
-  assert.notDeepEqual(movement[1], movement[0]);
+  assert.deepEqual(movement[1]?.options, {
+    arriveThreshold: LIMITS.enemyApproachTolerance,
+    ...DODGE_PATH_OPTIONS,
+  });
+});
+
+test('no-path enemy navigation rejects the target and selects the next enemy', () => {
+  const controller = createController();
+  controller.state.autoDodgeEnabled = true;
+  const selector = new PersistentEnemyTarget();
+  const navigator = new EnemyNavigator(controller, selector);
+  const blocked = { objectId: 30, name: 'Blocked Enemy', position: { x: 20, y: 0 } };
+  const reachable = { objectId: 40, name: 'Reachable Enemy', position: { x: 25, y: 0 } };
+  const enemies = [blocked, reachable];
+
+  setWorld({ mapName: 'Realm of the Mad God', position: { x: 0, y: 0 } });
+  Hive.enemies.getNearest = () => blocked;
+  Hive.enemies.getAll = () => enemies;
+  Hive.enemies.getById = (objectId) => enemies.find((enemy) => enemy.objectId === objectId) ?? null;
+  Hive.walking.navigateTo = () => true;
+
+  assert.equal(navigator.walk(selector.select()), true);
+  Hive.walking.getNavigationState = () => ({
+    status: 'no_path',
+    target: { x: blocked.position.x, y: blocked.position.y, threshold: 1 },
+    path: [],
+    dodgeDecision: null,
+  });
+  Hive.walking.isMoving = () => false;
+
+  assert.equal(navigator.walk(blocked), false);
+  assert.equal(selector.select()?.objectId, reachable.objectId);
 });
 
 test('Realm movement uses the combined goal-owned dodge navigator', () => {
@@ -714,18 +728,18 @@ test('Realm movement uses the combined goal-owned dodge navigator', () => {
     name: 'Enemy',
     position: { x: 21, y: 34 },
   });
-  Hive.walking.navigateToCombatTarget = (x, y, options) => {
-    movement.push({ action: 'navigateToCombatTarget', x, y, options });
+  Hive.walking.navigateTo = (x, y, options) => {
+    movement.push({ action: 'navigateTo', x, y, options });
     return true;
   };
 
   tree.onLoop();
   assert.deepEqual(movement, [
     {
-      action: 'navigateToCombatTarget',
+      action: 'navigateTo',
       x: 21,
       y: 34,
-      options: { ...COMBAT_PATH_OPTIONS, ...DODGE_PATH_OPTIONS },
+      options: { arriveThreshold: LIMITS.enemyApproachTolerance, ...DODGE_PATH_OPTIONS },
     },
   ]);
 });
@@ -762,7 +776,7 @@ test('Realm targeting persists across level routes until another enemy is more t
   });
   Hive.enemies.getNearest = () => enemies.get(nearestId) ?? null;
   Hive.enemies.getById = (objectId) => enemies.get(objectId) ?? null;
-  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
+  Hive.walking.pathfindingWalkTo = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -797,7 +811,7 @@ test('Realm targeting replaces a persisted enemy that is no longer visible', () 
   setWorld({ mapName: 'Realm of the Mad God', level: 3 });
   Hive.enemies.getNearest = () => enemies.get(nearestId) ?? null;
   Hive.enemies.getById = (objectId) => enemies.get(objectId) ?? null;
-  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
+  Hive.walking.pathfindingWalkTo = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -812,6 +826,31 @@ test('Realm targeting replaces a persisted enemy that is no longer visible', () 
     { x: 22, y: 0 },
   ]);
   assert.equal(controller.state.currentTargetObjectId, 40);
+});
+
+test('Realm targeting ignores X Treasure Chest and selects the next nearest enemy', () => {
+  const ignored = {
+    objectId: 30,
+    name: 'X Treasure Chest',
+    position: { x: 1, y: 0 },
+  };
+  const enemy = {
+    objectId: 40,
+    name: 'Actual Enemy',
+    position: { x: 3, y: 0 },
+  };
+  const enemies = [ignored, enemy];
+
+  Hive.self.distanceTo = (position) => Math.hypot(position.x, position.y);
+  Hive.enemies.getNearest = () => ignored;
+  Hive.enemies.getAll = () => enemies;
+  Hive.enemies.getById = (objectId) => enemies.find(
+    (candidate) => candidate.objectId === objectId,
+  ) ?? null;
+
+  const target = new PersistentEnemyTarget().select();
+
+  assert.equal(target?.objectId, enemy.objectId);
 });
 
 test('levels 9 through 13 keep the selected low-level beacon within 150 tiles', () => {
@@ -839,7 +878,7 @@ test('levels 9 through 13 keep the selected low-level beacon within 150 tiles', 
     name: 'Enemy',
     position: { x: 20, y: 25 },
   });
-  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
+  Hive.walking.pathfindingWalkTo = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -865,14 +904,7 @@ test('levels 9 through 13 keep the selected low-level beacon within 150 tiles', 
   assert.equal(activeNames(tree).at(-1), 'Walk To Enemy Near Beacon');
   tree.onLoop();
   assert.equal(movement.length, 1);
-  assert.ok(Math.abs(
-    Math.hypot(movement[0].x - position.x, movement[0].y - position.y)
-      - LIMITS.distantEnemyApproachStepTiles,
-  ) < 1e-9);
-  assert.ok(
-    Math.hypot(movement[0].x - 20, movement[0].y - 25)
-      < Math.hypot(position.x - 20, position.y - 25),
-  );
+  assert.deepEqual(movement[0], { x: 20, y: 25 });
 
   position.x = -1;
   assert.equal(activeNames(tree).at(-1), 'Teleport To Random Beacon');
@@ -949,7 +981,7 @@ test('levels 14 through 20 fight within 250 tiles and teleport back outside it',
     name: 'Enemy',
     position: { x: 30, y: 35 },
   });
-  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
+  Hive.walking.pathfindingWalkTo = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -993,7 +1025,7 @@ test('levels 9 through 13 walk to enemies until an eligible beacon appears', () 
     name: 'Enemy',
     position: { x: 12, y: 13 },
   });
-  Hive.walking.pathfindingWalkToCombatTarget = (x, y) => {
+  Hive.walking.pathfindingWalkTo = (x, y) => {
     movement.push({ x, y });
     return true;
   };
@@ -1024,16 +1056,13 @@ test('levels 9 through 13 walk to enemies until an eligible beacon appears', () 
   assert.equal(stops, 1);
 });
 
-test('placeholder leaves issue no movement or portal commands', () => {
+test('Enter Vault leaf requests vault entry; other placeholders stay idle', () => {
   const controller = createController();
   const { tree } = createTestTree(controller);
   let commandCount = 0;
+  let enterVaultCount = 0;
 
   Hive.walking.pathfindingWalkTo = () => {
-    commandCount += 1;
-    return true;
-  };
-  Hive.walking.pathfindingWalkToCombatTarget = () => {
     commandCount += 1;
     return true;
   };
@@ -1045,10 +1074,16 @@ test('placeholder leaves issue no movement or portal commands', () => {
     commandCount += 1;
     return true;
   };
+  Hive.walking.enterVault = () => {
+    enterVaultCount += 1;
+    return true;
+  };
 
   controller.state.vault = true;
   setWorld({ mapName: 'Nexus', hp: 100, maxHp: 100 });
   tree.onLoop();
+  assert.equal(enterVaultCount, 1);
+  assert.equal(commandCount, 0);
 
   setWorld({ mapName: 'Nexus', hp: 80, maxHp: 100 });
   tree.onLoop();

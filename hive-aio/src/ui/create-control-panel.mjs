@@ -1,5 +1,20 @@
 import { Hive, Panel } from '@hive/sdk';
 
+// Hive Manager main predates the visual metric, badge, and divider widgets.
+// Keep the same controls there by rendering readable labels in their place.
+if (typeof Panel.badge !== 'function') {
+  Panel.badge = (text, options = {}) => Panel.label(text, { id: options.id });
+}
+if (typeof Panel.metric !== 'function') {
+  Panel.metric = ({ id, label, value, detail }) => Panel.label(
+    `${label}: ${value}${detail ? ` (${detail})` : ''}`,
+    { id },
+  );
+}
+if (typeof Panel.divider !== 'function') {
+  Panel.divider = (label) => Panel.heading(label, 3);
+}
+
 export function createControlPanel(controller, servers, serverOptions) {
   const { state } = controller;
 
@@ -177,6 +192,20 @@ export function createControlPanel(controller, servers, serverOptions) {
                   value: state.autoDrinkEnabled,
                   width: 'full',
                   onChange: (enabled) => controller.setAutoDrinkEnabled(enabled),
+                }),
+                Panel.toggle({
+                  id: 'drink-vault-potions',
+                  label: 'Drink Vault Potions',
+                  value: state.drinkVaultPotionsEnabled,
+                  width: 'full',
+                  onChange: (enabled) => controller.setDrinkVaultPotionsEnabled(enabled),
+                }),
+                Panel.toggle({
+                  id: 'equip-vault-upgrades',
+                  label: 'Equip Vault Upgrades',
+                  value: state.equipVaultUpgradesEnabled,
+                  width: 'full',
+                  onChange: (enabled) => controller.setEquipVaultUpgradesEnabled(enabled),
                 }),
                 Panel.toggle({
                   id: 'pickup-potions',

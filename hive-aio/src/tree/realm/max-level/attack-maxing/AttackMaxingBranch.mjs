@@ -1,6 +1,6 @@
 import { Branch } from '@hive/sdk';
 import { TeleportToDeepSeaAbyssBeaconLeaf } from '../../high-level/teleport-to-deep-sea-abyss-beacon/TeleportToDeepSeaAbyssBeaconLeaf.mjs?rev=teleport-sync-20260713';
-import { WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf } from '../../high-level/walk-to-nearest-enemy/WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf.mjs?rev=distant-enemy-progress-20260716';
+import { WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf } from '../../high-level/walk-to-nearest-enemy/WalkToNearestEnemyNearDeepSeaAbyssBeaconLeaf.mjs?rev=direct-enemy-pathfinding-20260716';
 import {
   ENABLE_ATTACK_MAXING_WHEN_MAXED_FOR_TESTING,
   needsSixEightStat,

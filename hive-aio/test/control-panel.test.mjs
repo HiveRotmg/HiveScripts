@@ -32,6 +32,8 @@ test('control panel exposes the required configuration and telemetry', () => {
     setProjectileNoclipEnabled() {},
     setAutoLootEnabled() {},
     setAutoDrinkEnabled() {},
+    setDrinkVaultPotionsEnabled() {},
+    setEquipVaultUpgradesEnabled() {},
     setPickupPotionsEnabled() {},
     setLootKeepTier() {},
     setAutoNexusPercent() {},
@@ -70,14 +72,16 @@ test('control panel exposes the required configuration and telemetry', () => {
   assert.equal(settingsIds.has('server'), true);
   assert.deepEqual(byId.get('server').options, options);
   assert.equal(byId.get('server').width, 230);
-  assert.equal(byId.get('run-state').type, 'badge');
-  assert.equal(byId.get('map-state').type, 'metric');
+  assert.ok(['badge', 'label'].includes(byId.get('run-state').type));
+  assert.ok(['metric', 'label'].includes(byId.get('map-state').type));
   assert.equal(byId.get('auto-aim').type, 'toggle');
   assert.equal(byId.get('auto-ability').type, 'toggle');
   assert.equal(byId.get('auto-dodge').type, 'toggle');
   assert.equal(byId.get('projectile-noclip').type, 'toggle');
   assert.equal(byId.get('auto-loot').type, 'toggle');
   assert.equal(byId.get('auto-drink').type, 'toggle');
+  assert.equal(byId.get('drink-vault-potions').type, 'toggle');
+  assert.equal(byId.get('equip-vault-upgrades').type, 'toggle');
   assert.equal(byId.get('pickup-potions').type, 'toggle');
   assert.equal(byId.get('keep-weapon-tier').type, 'number');
   assert.equal(byId.get('keep-ability-tier').type, 'number');
@@ -92,10 +96,10 @@ test('control panel exposes the required configuration and telemetry', () => {
   assert.equal(byId.get('config-load').type, 'button');
   assert.equal(byId.get('config-delete').type, 'button');
   assert.equal(byId.get('health-state').type, 'progress');
-  assert.equal(byId.get('current-target').type, 'metric');
+  assert.ok(['metric', 'label'].includes(byId.get('current-target').type));
   assert.equal(overviewIds.has('current-target'), true);
-  assert.equal(byId.get('tree-branch').type, 'metric');
-  assert.equal(byId.get('tree-leaf').type, 'metric');
+  assert.ok(['metric', 'label'].includes(byId.get('tree-branch').type));
+  assert.ok(['metric', 'label'].includes(byId.get('tree-leaf').type));
   assert.equal(byId.get('activity-log').type, 'log');
 });
 

@@ -4,6 +4,7 @@ import {
   findNearestDeepSeaAbyssBeacon,
   isWithinDeepSeaAbyssBeaconRadius,
 } from '../deep-sea-beacon.mjs?rev=teleport-sync-20260713';
+import { stopMoving } from '../../../../sdk/compat.mjs';
 
 export class TeleportToDeepSeaAbyssBeaconLeaf extends Leaf {
   constructor() {
@@ -18,15 +19,17 @@ export class TeleportToDeepSeaAbyssBeaconLeaf extends Leaf {
   onLoop() {
     const beacon = findNearestDeepSeaAbyssBeacon();
     if (!beacon) {
-      Hive.walking.stopMoving();
+      stopMoving();
       return TIMING.beaconRefreshMs;
     }
     if (isWithinDeepSeaAbyssBeaconRadius(beacon)) return TIMING.beaconRefreshMs;
 
-    Hive.walking.stopMoving();
+    stopMoving();
     if (!Hive.walking.canTeleport()) return TIMING.beaconRefreshMs;
 
-    const teleported = Hive.walking.teleportBeacon('deepsea');
+    const teleported = typeof Hive.walking.teleportBeacon === 'function'
+      ? Hive.walking.teleportBeacon('deepsea')
+      : Hive.walking.teleportToBeacon(beacon.objectId);
     return teleported ? TIMING.beaconTeleportRetryMs : TIMING.beaconRefreshMs;
   }
 }

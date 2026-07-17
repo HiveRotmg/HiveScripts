@@ -1,19 +1,25 @@
 import { Hive, TreeScript } from '@hive/sdk';
-import { applyCombatSettings, disableCombatAutomation } from './combat/apply-combat-settings.mjs?rev=goal-owned-dodge-20260714';
+import { applyCombatSettings, disableCombatAutomation } from './combat/apply-combat-settings.mjs?rev=tutorial-fresh-account-20260717';
 import { createServerControl, TIMING } from './config/constants.mjs?rev=combined-navigation-20260714';
-import { ScriptState } from './state/ScriptState.mjs?rev=vault-storage-20260715';
-import { createTree } from './tree/create-tree.mjs?rev=distant-enemy-progress-20260716';
-import { createControlPanel } from './ui/create-control-panel.mjs?rev=pickup-pots-20260714';
-import { getMapKind, isOryxCastleMap } from './world/map-kind.mjs?rev=oryx-castle-safety-20260715';
-import { AutoLootController } from './loot/AutoLootController.mjs?rev=combined-navigation-20260714';
+import { ScriptState } from './state/ScriptState.mjs?rev=equip-vault-upgrades-20260717';
+import { createTree } from './tree/create-tree.mjs?rev=dungeon-catalog-20260717';
+import { resolveCurrentDungeonId } from './tree/dungeons/index.mjs?rev=dungeon-catalog-20260717';
+import { createControlPanel } from './ui/create-control-panel.mjs?rev=equip-vault-upgrades-20260717';
+import { getMapKind, isOryxCastleMap } from './world/map-kind.mjs?rev=dungeon-catalog-20260717';
+import { AutoLootController } from './loot/AutoLootController.mjs?rev=equip-vault-upgrades-20260717';
 import { AutoDrinkController } from './loot/AutoDrinkController.mjs?rev=combined-navigation-20260714';
+import { DrinkVaultPotionsController } from './loot/DrinkVaultPotionsController.mjs?rev=drink-vault-potions-20260717';
+import { EquipVaultUpgradesController } from './loot/EquipVaultUpgradesController.mjs?rev=equip-vault-upgrades-20260717';
 import { VaultManager } from './storage/VaultManager.mjs?rev=vault-storage-inventory-confirm-20260715';
+import { callOptional, setAutoNexus, stopMoving } from './sdk/compat.mjs';
 
 export default class HiveAIO extends TreeScript {
   state = new ScriptState();
   tree = null;
   autoLoot = null;
   autoDrink = null;
+  drinkVaultPotions = null;
+  equipVaultUpgrades = null;
   vaultManager = null;
 
   onStart() {
@@ -23,25 +29,31 @@ export default class HiveAIO extends TreeScript {
     this.state.selectedServer = serverControl.selectedServer;
     this.state.selectedServerName = serverControl.selectedLabel;
     this.state.mapKind = getMapKind();
+    this.state.currentDungeon = resolveCurrentDungeonId();
 
     disableCombatAutomation();
-    Hive.autoNexus.enable(this.state.autoNexusPercent);
+    setAutoNexus(this.state.autoNexusPercent);
 
     this.autoLoot = new AutoLootController(this);
     this.autoDrink = new AutoDrinkController(this);
+    this.drinkVaultPotions = new DrinkVaultPotionsController(this);
+    this.equipVaultUpgrades = new EquipVaultUpgradesController(this);
     this.vaultManager = new VaultManager(this);
     this.state.panel = createControlPanel(this, servers, serverControl.options);
     this.refreshPanelConfigs();
-    this.state.subscriptions = [
+    this.state.subscriptions = [];
+    if (typeof Hive.events.onShotFired === 'function') this.state.subscriptions.push(
       Hive.events.onShotFired((event) => {
         if (!this.state.automationRunning) return;
         this.appendActivity(`Shot ${event.bulletId}`);
       }),
+    );
+    if (typeof Hive.events.onDamageTaken === 'function') this.state.subscriptions.push(
       Hive.events.onDamageTaken((event) => {
         if (!this.state.automationRunning) return;
         this.appendActivity(`Damage ${event.amount} (${event.source})`);
       }),
-    ];
+    );
 
     this.tree = createTree(this);
     this.addBranches(...this.tree.branches);
@@ -57,6 +69,40 @@ export default class HiveAIO extends TreeScript {
       this.refreshPanel();
       return delay;
     }
+
+    if (!this.state.vaultOnStartDone) {
+      const vaultDelay = this.vaultManager?.onLoop();
+      if (vaultDelay !== null && vaultDelay !== undefined) {
+        this.setCurrentBranchName('Storage');
+        this.setCurrentLeafName(this.vaultManager.getActivityLabel());
+        this.refreshPanel();
+        return vaultDelay;
+      }
+    }
+
+    const vaultPotionDelay = this.drinkVaultPotions?.onLoop();
+    if (vaultPotionDelay !== null && vaultPotionDelay !== undefined) {
+      this.setCurrentBranchName('Storage');
+      this.setCurrentLeafName(this.drinkVaultPotions.getActivityLabel());
+      this.refreshPanel();
+      return vaultPotionDelay;
+    }
+
+    const vaultUpgradeDelay = this.equipVaultUpgrades?.onLoop();
+    if (vaultUpgradeDelay !== null && vaultUpgradeDelay !== undefined) {
+      this.setCurrentBranchName('Storage');
+      this.setCurrentLeafName(this.equipVaultUpgrades.getActivityLabel());
+      this.refreshPanel();
+      return vaultUpgradeDelay;
+    }
+
+    // While retrieving vault potions/upgrades, skip bag loot/drink and let Nexus enter Vault.
+    if (this.state.drinkVaultPotionsActive || this.state.equipVaultUpgradesActive) {
+      const delay = super.onLoop();
+      this.refreshPanel();
+      return delay;
+    }
+
     const vaultDelay = this.vaultManager?.onLoop();
     if (vaultDelay !== null && vaultDelay !== undefined) {
       this.setCurrentBranchName('Storage');
@@ -84,14 +130,18 @@ export default class HiveAIO extends TreeScript {
   }
 
   onStop() {
-    for (const unsubscribe of this.state.subscriptions) unsubscribe();
+    for (const unsubscribe of this.state.subscriptions) {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    }
     this.state.subscriptions = [];
     this.state.automationRunning = false;
     this.autoLoot?.reset();
     this.autoDrink?.reset();
+    this.drinkVaultPotions?.reset();
+    this.equipVaultUpgrades?.reset();
     this.vaultManager?.pause();
     disableCombatAutomation();
-    Hive.walking.stopMoving();
+    stopMoving();
     Hive.ui.status(null);
     this.state.panel = null;
   }
@@ -101,8 +151,10 @@ export default class HiveAIO extends TreeScript {
     this.tree?.reset();
     this.autoLoot?.reset();
     this.autoDrink?.reset();
+    this.drinkVaultPotions?.reset();
+    this.equipVaultUpgrades?.reset();
     this.vaultManager?.onAutomationStart();
-    Hive.autoNexus.enable(this.state.autoNexusPercent);
+    setAutoNexus(this.state.autoNexusPercent);
     applyCombatSettings(this.state);
     this.state.panel?.setText('start-stop', 'Stop');
     this.appendActivity('Automation started');
@@ -114,9 +166,11 @@ export default class HiveAIO extends TreeScript {
     this.tree?.reset();
     this.autoLoot?.reset();
     this.autoDrink?.reset();
+    this.drinkVaultPotions?.reset();
+    this.equipVaultUpgrades?.reset();
     this.vaultManager?.pause();
     disableCombatAutomation();
-    Hive.walking.stopMoving();
+    stopMoving();
     this.state.panel?.setText('start-stop', 'Start');
     this.appendActivity('Automation stopped');
     this.refreshPanel();
@@ -130,11 +184,13 @@ export default class HiveAIO extends TreeScript {
     this.tree?.reset();
     this.autoLoot?.reset();
     this.autoDrink?.reset();
+    this.drinkVaultPotions?.reset();
+    this.equipVaultUpgrades?.reset();
     this.vaultManager?.pause();
     disableCombatAutomation();
     const serverName = servers.find((server) => server.address === address)?.name ?? address;
-    this.state.panel?.setProps('server-state', { text: serverName, tone: 'info' });
-    this.state.panel?.setProps('overview-server-state', { text: serverName, tone: 'neutral' });
+    this.state.panel?.setProps?.('server-state', { text: serverName, tone: 'info' });
+    this.state.panel?.setProps?.('overview-server-state', { text: serverName, tone: 'neutral' });
     this.appendActivity(`Server: ${serverName}`);
     Hive.connection.reconnect(address);
   }
@@ -154,13 +210,13 @@ export default class HiveAIO extends TreeScript {
   setAutoDodgeEnabled(enabled) {
     this.state.autoDodgeEnabled = Boolean(enabled);
     if (this.state.autoDodgeEnabled && this.state.automationRunning) {
-      Hive.walking.enableAutoDodge({
+      callOptional(Hive.walking, 'enableAutoDodge', {
         safeWalk: true,
         projectileJump: true,
         maxJumpDistance: 1.5,
       });
     } else {
-      Hive.walking.disableAutoDodge();
+      callOptional(Hive.walking, 'disableAutoDodge');
     }
     this.appendActivity(`Autododge ${enabled ? 'enabled' : 'disabled'}`);
   }
@@ -181,6 +237,18 @@ export default class HiveAIO extends TreeScript {
     this.state.autoDrinkEnabled = Boolean(enabled);
     this.autoDrink?.reset();
     this.appendActivity(`AutoDrink ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  setDrinkVaultPotionsEnabled(enabled) {
+    this.state.drinkVaultPotionsEnabled = Boolean(enabled);
+    if (!this.state.drinkVaultPotionsEnabled) this.drinkVaultPotions?.reset();
+    this.appendActivity(`Drink Vault Potions ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  setEquipVaultUpgradesEnabled(enabled) {
+    this.state.equipVaultUpgradesEnabled = Boolean(enabled);
+    if (!this.state.equipVaultUpgradesEnabled) this.equipVaultUpgrades?.reset();
+    this.appendActivity(`Equip Vault Upgrades ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   setPickupPotionsEnabled(enabled) {
@@ -205,7 +273,7 @@ export default class HiveAIO extends TreeScript {
 
   setAutoNexusPercent(percent) {
     this.state.autoNexusPercent = Math.max(1, Math.min(100, Math.round(percent)));
-    Hive.autoNexus.setThreshold(this.state.autoNexusPercent);
+    setAutoNexus(this.state.autoNexusPercent);
     this.appendActivity(`Auto-nexus ${this.state.autoNexusPercent}%`);
   }
 
@@ -219,13 +287,13 @@ export default class HiveAIO extends TreeScript {
     if (!panel) return;
 
     const names = new Set(['default']);
-    for (const config of panel.listConfigs()) names.add(config.name);
+    for (const config of (panel.listConfigs?.() ?? [])) names.add(config.name);
     const options = [...names]
       .sort((left, right) => left.localeCompare(right))
       .map((name) => ({ label: name, value: name }));
     const requested = String(preferredName || panel.activeConfig || 'default').trim() || 'default';
     const selected = names.has(requested) ? requested : 'default';
-    panel.setOptions('config-select', options);
+    panel.setOptions?.('config-select', options);
     panel.setValue('config-select', selected);
     panel.setValue('config-name', selected);
   }
@@ -233,6 +301,7 @@ export default class HiveAIO extends TreeScript {
   savePanelConfig() {
     const panel = this.state.panel;
     if (!panel) return;
+    if (typeof panel.saveConfig !== 'function' || typeof panel.getValue !== 'function') return;
     const name = String(panel.getValue('config-name') || '').trim() || 'default';
     try {
       panel.saveConfig(name);
@@ -246,6 +315,7 @@ export default class HiveAIO extends TreeScript {
   loadPanelConfig() {
     const panel = this.state.panel;
     if (!panel) return;
+    if (typeof panel.loadConfig !== 'function' || typeof panel.getValue !== 'function') return;
     const name = String(panel.getValue('config-name') || '').trim() || 'default';
     if (!panel.loadConfig(name)) {
       this.appendActivity(`Config not found: ${name}`);
@@ -259,6 +329,7 @@ export default class HiveAIO extends TreeScript {
   deletePanelConfig() {
     const panel = this.state.panel;
     if (!panel) return;
+    if (typeof panel.deleteConfig !== 'function' || typeof panel.getValue !== 'function') return;
     const name = String(panel.getValue('config-name') || '').trim() || 'default';
     if (!panel.deleteConfig(name)) {
       this.appendActivity(`Config not found: ${name}`);
@@ -270,12 +341,14 @@ export default class HiveAIO extends TreeScript {
 
   synchronizeMapState() {
     const nextMapKind = getMapKind();
+    this.state.currentDungeon = resolveCurrentDungeonId();
     if (nextMapKind === this.state.mapKind) return;
 
     this.state.mapKind = nextMapKind;
     this.tree?.onMapChange(nextMapKind);
     this.autoLoot?.reset();
     this.autoDrink?.reset();
+    // Keep drink-vault-potion intent across async Nexus/Vault transitions.
     applyCombatSettings(this.state);
     this.appendActivity(`Map: ${Hive.world.getName() || 'Unknown'}`);
   }
@@ -321,20 +394,20 @@ export default class HiveAIO extends TreeScript {
       ? 'success'
       : (healthPercent <= this.state.autoNexusPercent ? 'danger' : 'warning');
 
-    panel.setProps('run-state', {
+    panel.setProps?.('run-state', {
       text: this.state.automationRunning ? 'Running' : 'Stopped',
       tone: this.state.automationRunning ? 'success' : 'neutral',
     });
-    panel.setProps('start-stop', {
+    panel.setProps?.('start-stop', {
       label: this.state.automationRunning ? 'Stop' : 'Start',
       variant: this.state.automationRunning ? 'danger' : 'primary',
     });
-    panel.setProps('map-state', {
+    panel.setProps?.('map-state', {
       value: mapName,
       detail: this.state.mapKind === 'other' ? 'Other map' : this.state.mapKind,
       tone: mapTone,
     });
-    panel.setProps('level-state', {
+    panel.setProps?.('level-state', {
       value: String(level),
       detail: level < 8
         ? 'Nearest enemy'
@@ -343,32 +416,32 @@ export default class HiveAIO extends TreeScript {
           : (level <= 20 ? 'Deep Sea Abyss' : 'Level 21+')),
       tone: level < 8 ? 'warning' : 'info',
     });
-    panel.setProps('health-metric', {
+    panel.setProps?.('health-metric', {
       value: `${hp} / ${maxHp}`,
       detail: `${healthPercent}%`,
       tone: healthTone,
     });
     panel.setValue('health-state', healthRatio);
     panel.setText('health-state', `${hp} / ${maxHp}`);
-    panel.setProps('current-action', {
+    panel.setProps?.('current-action', {
       value: leaf,
       detail: branch,
       tone: this.state.automationRunning ? 'info' : 'neutral',
     });
-    panel.setProps('current-target', {
+    panel.setProps?.('current-target', {
       value: currentTarget?.name || (currentTarget ? `Enemy ${currentTarget.objectId}` : 'None'),
       detail: targetDetail,
       tone: currentTarget ? (currentTarget.isBoss ? 'danger' : 'warning') : 'neutral',
     });
-    panel.setProps('tree-branch', { value: branch });
-    panel.setProps('tree-leaf', { value: leaf });
-    panel.setProps('route-state', { text: routeName });
-    panel.setProps('routing-state', {
+    panel.setProps?.('tree-branch', { value: branch });
+    panel.setProps?.('tree-leaf', { value: leaf });
+    panel.setProps?.('route-state', { text: routeName });
+    panel.setProps?.('routing-state', {
       value: routeName,
       detail: this.vaultManager?.getRouteName() ? 'Storage workflow active' : 'Realm routing active',
     });
-    panel.setProps('server-state', { text: this.state.selectedServerName || this.state.selectedServer });
-    panel.setProps('overview-server-state', { text: this.state.selectedServerName || this.state.selectedServer });
+    panel.setProps?.('server-state', { text: this.state.selectedServerName || this.state.selectedServer });
+    panel.setProps?.('overview-server-state', { text: this.state.selectedServerName || this.state.selectedServer });
     Hive.ui.status(this.state.automationRunning ? leaf : 'Ready');
   }
 

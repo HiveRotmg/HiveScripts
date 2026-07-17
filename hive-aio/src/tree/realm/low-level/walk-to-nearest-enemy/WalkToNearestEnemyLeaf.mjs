@@ -1,6 +1,6 @@
 import { Leaf } from '@hive/sdk';
 import { TIMING } from '../../../../config/constants.mjs?rev=combat-range-20260714';
-import { EnemyNavigator } from '../../../../movement/pathfinding.mjs?rev=distant-enemy-progress-20260716';
+import { EnemyNavigator } from '../../../../movement/pathfinding.mjs?rev=direct-enemy-pathfinding-20260716';
 import { walkTowardRealmCenter } from '../../../../movement/exploration.mjs?rev=realm-exploration-20260715';
 
 export class WalkToNearestEnemyLeaf extends Leaf {
@@ -9,7 +9,7 @@ export class WalkToNearestEnemyLeaf extends Leaf {
     this.controller = controller;
     this.enemyTarget = enemyTarget;
     this.walkToCenterWhenEmpty = walkToCenterWhenEmpty;
-    this.enemyNavigator = new EnemyNavigator(controller);
+    this.enemyNavigator = new EnemyNavigator(controller, enemyTarget);
   }
 
   isValid() {
@@ -27,5 +27,9 @@ export class WalkToNearestEnemyLeaf extends Leaf {
     const moving = this.enemyNavigator.walk(enemy);
     if (!moving && this.walkToCenterWhenEmpty) walkTowardRealmCenter(this.controller);
     return TIMING.enemyRefreshMs;
+  }
+
+  reset() {
+    this.enemyNavigator.reset();
   }
 }

@@ -1,31 +1,36 @@
 import { Hive } from '@hive/sdk';
-import { isRealmMap } from '../world/map-kind.mjs';
+import { isRealmMap, isTutorialMap } from '../world/map-kind.mjs';
+import { callOptional } from '../sdk/compat.mjs';
 
 export function disableCombatAutomation() {
-  Hive.combat.disableAutoAim();
-  Hive.combat.disableAutoAbility();
-  Hive.combat.disableProjectileNoclip();
-  Hive.walking.disableAutoDodge();
+  callOptional(Hive.combat, 'disableAutoAim');
+  callOptional(Hive.combat, 'disableAutoAbility');
+  callOptional(Hive.combat, 'disableProjectileNoclip');
+  callOptional(Hive.walking, 'disableAutoDodge');
 }
 
 function applyProjectileNoclip(state) {
   if (state.projectileNoclipEnabled) {
-    Hive.combat.enableProjectileNoclip();
+    callOptional(Hive.combat, 'enableProjectileNoclip');
   } else {
-    Hive.combat.disableProjectileNoclip();
+    callOptional(Hive.combat, 'disableProjectileNoclip');
   }
 }
 
 function applyAutoDodge(state) {
   if (state.autoDodgeEnabled) {
-    Hive.walking.enableAutoDodge({
+    callOptional(Hive.walking, 'enableAutoDodge', {
       safeWalk: true,
       projectileJump: true,
       maxJumpDistance: 1.5,
     });
   } else {
-    Hive.walking.disableAutoDodge();
+    callOptional(Hive.walking, 'disableAutoDodge');
   }
+}
+
+function allowsCombatAutomation() {
+  return isRealmMap() || isTutorialMap();
 }
 
 export function applyCombatSettings(state) {
@@ -38,26 +43,26 @@ export function applyCombatSettings(state) {
   // including safe movement and non-Realm navigation.
   applyAutoDodge(state);
 
-  if (!isRealmMap()) {
-    Hive.combat.disableAutoAim();
-    Hive.combat.disableAutoAbility();
+  if (!allowsCombatAutomation()) {
+    callOptional(Hive.combat, 'disableAutoAim');
+    callOptional(Hive.combat, 'disableAutoAbility');
     applyProjectileNoclip(state);
     return;
   }
 
   if (state.autoAimEnabled) {
-    Hive.combat.enableAutoAim({
+    callOptional(Hive.combat, 'enableAutoAim', {
       mode: 'closest',
       bossPriority: false,
     });
   } else {
-    Hive.combat.disableAutoAim();
+    callOptional(Hive.combat, 'disableAutoAim');
   }
 
   if (state.autoAbilityEnabled) {
-    Hive.combat.enableAutoAbility();
+    callOptional(Hive.combat, 'enableAutoAbility');
   } else {
-    Hive.combat.disableAutoAbility();
+    callOptional(Hive.combat, 'disableAutoAbility');
   }
 
   applyProjectileNoclip(state);

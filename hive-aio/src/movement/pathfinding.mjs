@@ -1,166 +1,106 @@
 import { Hive } from '@hive/sdk';
-import { LIMITS } from '../config/constants.mjs?rev=distant-enemy-waypoints-20260715';
+import { LIMITS } from '../config/constants.mjs';
+import { supportsModernNavigation } from '../sdk/compat.mjs';
 
-const DISTANT_ENEMY_STALL_MS = 3000;
-const DISTANT_ENEMY_PROGRESS_TILES = 0.25;
-const APPROACH_ANGLE_OFFSETS = Object.freeze([
-  0,
-  Math.PI / 6,
-  -Math.PI / 6,
-  Math.PI / 4,
-  -Math.PI / 4,
-]);
+const ENEMY_REPLAN_MS = 250;
 
 export function pathfindingWalkTo(controller, x, y, arriveThreshold) {
-  if (controller.state.autoDodgeEnabled) {
-    return Hive.walking.navigateTo(x, y, {
-      arriveThreshold,
+  if (controller.state.autoDodgeEnabled && supportsModernNavigation()) {
+    const options = {
       safeWalk: true,
       projectileJump: true,
       maxJumpDistance: 1.5,
-    });
+    };
+    if (Number.isFinite(arriveThreshold)) options.arriveThreshold = arriveThreshold;
+    return Hive.walking.navigateTo(x, y, options);
   }
-  return Hive.walking.pathfindingWalkTo(x, y, arriveThreshold);
-}
-
-export function combatPathfindingWalkTo(controller, x, y) {
-  const options = {
-    minimumEnemyDistance: LIMITS.enemyExclusionDistanceTiles,
-    preferredRangeRatio: LIMITS.preferredCombatRangeRatio,
-  };
-  if (controller.state.autoDodgeEnabled) {
-    return Hive.walking.navigateToCombatTarget(x, y, {
-      ...options,
-      safeWalk: true,
-      projectileJump: true,
-      maxJumpDistance: 1.5,
-    });
+  if (typeof Hive.walking.pathfindingWalkTo === 'function') {
+    return Hive.walking.pathfindingWalkTo(x, y, arriveThreshold);
   }
-  return Hive.walking.pathfindingWalkToCombatTarget(x, y, options);
+  return Hive.walking.walkTo(x, y);
 }
 
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function boundedApproachTarget(origin, target, attempt = 0) {
-  const dx = target.x - origin.x;
-  const dy = target.y - origin.y;
-  const targetDistance = Math.hypot(dx, dy);
-  if (!Number.isFinite(targetDistance) || targetDistance <= 0) return null;
-  const step = Math.min(targetDistance, LIMITS.distantEnemyApproachStepTiles);
-  const angle = APPROACH_ANGLE_OFFSETS[attempt % APPROACH_ANGLE_OFFSETS.length];
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  const unitX = dx / targetDistance;
-  const unitY = dy / targetDistance;
-  return {
-    x: origin.x + (unitX * cos - unitY * sin) * step,
-    y: origin.y + (unitX * sin + unitY * cos) * step,
-  };
+function getNavigationState() {
+  try {
+    return typeof Hive.walking.getNavigationState === 'function'
+      ? Hive.walking.getNavigationState()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isNavigationMoving() {
+  try {
+    return typeof Hive.walking.isMoving === 'function' ? Hive.walking.isMoving() : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasReachedEnemy(enemy) {
+  try {
+    return Hive.self.distanceTo(enemy.position) <= LIMITS.enemyApproachTolerance;
+  } catch {
+    return false;
+  }
 }
 
 export class EnemyNavigator {
-  constructor(controller) {
+  constructor(controller, enemyTarget = null) {
     this.controller = controller;
+    this.enemyTarget = enemyTarget;
     this.targetObjectId = null;
-    this.approachTarget = null;
     this.lastEnemyPosition = null;
-    this.approachAttempt = 0;
-    this.navigationIssued = false;
-    this.bestApproachDistance = Infinity;
-    this.lastProgressAt = 0;
+    this.lastNavigationAt = -Infinity;
   }
 
   reset() {
     this.targetObjectId = null;
-    this.approachTarget = null;
     this.lastEnemyPosition = null;
-    this.approachAttempt = 0;
-    this.navigationIssued = false;
-    this.bestApproachDistance = Infinity;
-    this.lastProgressAt = 0;
+    this.lastNavigationAt = -Infinity;
   }
 
   walk(enemy) {
     if (!enemy?.position) return false;
 
-    const enemyDistance = Hive.self.distanceTo(enemy.position);
-    if (enemyDistance <= LIMITS.combatNavigationActivationDistanceTiles) {
-      this.reset();
-      return combatPathfindingWalkTo(
-        this.controller,
-        enemy.position.x,
-        enemy.position.y,
-      );
-    }
-
     const now = Date.now();
-    const playerPosition = Hive.self.getPosition();
-    const approachDistance = this.approachTarget
-      ? distance(playerPosition, this.approachTarget)
-      : Infinity;
-    const approachReached = this.approachTarget
-      && approachDistance
-        <= LIMITS.distantEnemyApproachToleranceTiles + 1;
-    const targetMoved = this.lastEnemyPosition
-      && distance(this.lastEnemyPosition, enemy.position)
-        >= LIMITS.distantEnemyRetargetDistanceTiles;
     const targetChanged = this.targetObjectId !== enemy.objectId;
+    const targetMoved = this.lastEnemyPosition
+      && distance(this.lastEnemyPosition, enemy.position) > 0;
+    const replanDue = now - this.lastNavigationAt >= ENEMY_REPLAN_MS;
+    const navigation = getNavigationState();
 
-    if (this.navigationIssued
-      && approachDistance <= this.bestApproachDistance - DISTANT_ENEMY_PROGRESS_TILES) {
-      this.bestApproachDistance = approachDistance;
-      this.lastProgressAt = now;
+    const navigationTargetsEnemy = navigation?.target
+      && distance(navigation.target, enemy.position) < 0.05;
+    if (!targetChanged && navigation?.status === 'no_path' && navigationTargetsEnemy) {
+      this.enemyTarget?.reject?.(enemy);
+      this.reset();
+      return false;
     }
 
-    const navigationStopped = this.navigationIssued && !Hive.walking.isMoving();
-    const navigationStalled = this.navigationIssued
-      && now - this.lastProgressAt >= DISTANT_ENEMY_STALL_MS;
-    if (navigationStopped || navigationStalled) {
-      this.approachAttempt += 1;
-      this.approachTarget = null;
-      this.navigationIssued = false;
-    } else if (this.navigationIssued && !targetChanged && !approachReached && !targetMoved) {
-      return true;
-    }
-
-    if (targetChanged || approachReached || targetMoved) {
-      this.approachAttempt = 0;
-      this.approachTarget = null;
-      this.navigationIssued = false;
-    }
-
-    if (!this.approachTarget) {
-      const approachTarget = boundedApproachTarget(
-        playerPosition,
-        enemy.position,
-        this.approachAttempt,
-      );
-      if (!approachTarget) {
-        this.reset();
-        return false;
+    if (!targetChanged && (!targetMoved || !replanDue)) {
+      const moving = isNavigationMoving();
+      if (moving !== false || navigation?.status === 'dodge_blocked' || hasReachedEnemy(enemy)) {
+        return true;
       }
-      this.targetObjectId = enemy.objectId;
-      this.approachTarget = approachTarget;
-      this.lastEnemyPosition = { ...enemy.position };
-      this.bestApproachDistance = distance(playerPosition, approachTarget);
-      this.lastProgressAt = now;
     }
 
     const started = pathfindingWalkTo(
       this.controller,
-      this.approachTarget.x,
-      this.approachTarget.y,
-      LIMITS.distantEnemyApproachToleranceTiles,
+      enemy.position.x,
+      enemy.position.y,
+      LIMITS.enemyApproachTolerance,
     );
-    if (!started) {
-      this.approachAttempt += 1;
-      this.approachTarget = null;
-      this.navigationIssued = false;
-      return false;
+    if (started) {
+      this.targetObjectId = enemy.objectId;
+      this.lastEnemyPosition = { ...enemy.position };
+      this.lastNavigationAt = now;
     }
-    this.navigationIssued = true;
-    return true;
+    return started;
   }
 }

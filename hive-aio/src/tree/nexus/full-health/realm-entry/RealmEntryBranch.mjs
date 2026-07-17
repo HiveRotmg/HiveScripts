@@ -17,7 +17,10 @@ export class RealmEntryBranch extends Branch {
   }
 
   isValid() {
-    return this.controller.state.vault === false;
+    const { state } = this.controller;
+    return state.vault === false
+      && state.drinkVaultPotionsActive !== true
+      && state.equipVaultUpgradesActive !== true;
   }
 
   reset() {

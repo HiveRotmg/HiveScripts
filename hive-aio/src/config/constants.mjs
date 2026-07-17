@@ -35,13 +35,9 @@ export const LIMITS = Object.freeze({
   explorationWaypointCount: 12,
   explorationArrivalTolerance: 2,
   realmCenterArrivalTolerance: 8,
+  enemyApproachTolerance: 1,
+  rejectedEnemyMoveTolerance: 0.5,
   enemyTargetSwitchAdvantageTiles: 10,
-  combatNavigationActivationDistanceTiles: 48,
-  distantEnemyApproachStepTiles: 24,
-  distantEnemyApproachToleranceTiles: 2,
-  distantEnemyRetargetDistanceTiles: 4,
-  enemyExclusionDistanceTiles: 1,
-  preferredCombatRangeRatio: 0.75,
 });
 
 function normalizeServerAddress(address) {

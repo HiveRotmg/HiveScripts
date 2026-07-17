@@ -1,1 +1,1 @@
-export { default } from './src/HiveAIO.mjs?rev=distant-enemy-progress-20260716';
+export { default } from './src/HiveAIO.mjs?rev=direct-enemy-pathfinding-20260716';

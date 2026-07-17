@@ -1,5 +1,6 @@
 import { Hive } from '@hive/sdk';
 import { potionStat } from '../loot/AutoDrinkController.mjs?rev=vault-storage-20260715';
+import { stopMoving } from '../sdk/compat.mjs';
 
 const POLL_MS = 200;
 const ROUTE_RETRY_MS = 3000;
@@ -88,7 +89,7 @@ export class VaultManager {
       }
 
       if (this.phase !== 'startup-populate') {
-        Hive.walking.stopMoving();
+        stopMoving();
         this.phase = 'startup-populate';
         this.populateStartedAt = Date.now();
         this.controller.appendActivity('Vault entered; waiting for storage data');
@@ -247,7 +248,7 @@ export class VaultManager {
     this.controller.state.storageBlocked = false;
     this.lastBlockedMessage = '';
 
-    Hive.walking.stopMoving();
+    stopMoving();
     const accepted = Hive.inventory.swapContainers(
       { container: 'inventory', slotId: plan.source.slotIndex },
       { container: plan.destinationContainer, slotId: plan.destination.slotId },
@@ -357,7 +358,16 @@ export class VaultManager {
 
   vaultSnapshot() {
     try {
-      return Hive.inventory.getVaultSnapshot();
+      if (typeof Hive.inventory.getVaultSnapshot === 'function') return Hive.inventory.getVaultSnapshot();
+      if (typeof Hive.inventory.getEntireVault === 'function') {
+        const snapshot = Hive.inventory.getEntireVault();
+        return {
+          ...snapshot,
+          active: isVaultMap(),
+          complete: true,
+        };
+      }
+      return null;
     } catch {
       return null;
     }
@@ -370,7 +380,7 @@ export class VaultManager {
   enterVault(message) {
     if (Date.now() - this.lastRouteCommandAt < ROUTE_RETRY_MS) return;
     this.lastRouteCommandAt = Date.now();
-    Hive.walking.stopMoving();
+    stopMoving();
     Hive.walking.enterVault();
     if (message) this.controller.appendActivity(message);
   }
@@ -378,7 +388,7 @@ export class VaultManager {
   routeToNexus(message, force = false) {
     if (!force && Date.now() - this.lastRouteCommandAt < ROUTE_RETRY_MS) return;
     this.lastRouteCommandAt = Date.now();
-    Hive.walking.stopMoving();
+    stopMoving();
     Hive.walking.nexus();
     if (message) this.controller.appendActivity(message);
   }

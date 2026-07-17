@@ -1,8 +1,9 @@
 import { Hive } from '@hive/sdk';
 import { isRealmMap } from '../world/map-kind.mjs';
 import { pathfindingWalkTo } from '../movement/pathfinding.mjs?rev=combined-navigation-20260714';
+import { stopMoving } from '../sdk/compat.mjs';
 
-const EQUIPMENT = Object.freeze({
+export const EQUIPMENT = Object.freeze({
   weapon: { slot: 0, thresholdKey: 'minKeepWeaponTier' },
   ability: { slot: 1, thresholdKey: 'minKeepAbilityTier' },
   armor: { slot: 2, thresholdKey: 'minKeepArmorTier' },
@@ -13,7 +14,7 @@ const ACTION_DELAY_MS = 200;
 const ACTION_TIMEOUT_MS = 20000;
 const RETRY_DELAY_MS = 3000;
 
-function numericTier(item) {
+export function numericTier(item) {
   const value = String(item?.tier ?? '').trim();
   return /^\d+$/.test(value) ? Number(value) : null;
 }
@@ -49,6 +50,82 @@ function ringCandidateScore(candidate) {
   return candidate.tier + ringPreference(candidate.info) / 2;
 }
 
+/**
+ * Shared AutoLoot upgrade / keep evaluation for a single object type against current inventory.
+ * Returns null when the item is irrelevant to equipment automation.
+ */
+export function evaluateEquipmentItem(objectType, inventory, thresholdFor) {
+  const info = Hive.loot.getItemInfo(objectType);
+  const category = info?.slotType;
+  const equipment = EQUIPMENT[category];
+  const tier = numericTier(info);
+  if (!equipment || tier === null) return null;
+
+  const threshold = thresholdFor(category);
+  const equippedObjectType = inventory[equipment.slot] ?? -1;
+  const equippedInfo = equippedObjectType > 0
+    ? Hive.loot.getItemInfo(equippedObjectType)
+    : null;
+  const equippedTier = numericTier(equippedInfo);
+  const compatible = typeof Hive.self.canEquip === 'function'
+    ? Hive.self.canEquip(objectType)
+    : equippedInfo?.slotType === category;
+  const upgrade = compatible && isEquipmentUpgrade({
+    category,
+    tier,
+    info,
+    equippedObjectType,
+    equippedTier,
+    equippedInfo,
+  });
+  const keepByTier = tier >= threshold;
+  if (!upgrade && !keepByTier) return null;
+
+  const enchantmentCount = upgrade
+    ? (typeof Hive.inventory.getEnchantments === 'function'
+      ? (Hive.inventory.getEnchantments(equipment.slot)?.typeIds?.length ?? 0)
+      : 3)
+    : 0;
+  const preserveEquipped = upgrade && equippedObjectType > 0 && (
+    enchantmentCount >= 3
+    || (equippedTier !== null && equippedTier >= threshold)
+  );
+  const requiresBuffer = !upgrade || preserveEquipped;
+
+  return {
+    objectType,
+    info,
+    category,
+    tier,
+    upgrade,
+    keepByTier,
+    equipmentSlot: equipment.slot,
+    equippedObjectType,
+    equippedInfo,
+    preserveEquipped,
+    requiresBuffer,
+  };
+}
+
+/** Same ranking AutoLoot uses when choosing among upgrades (distance optional). */
+export function compareEquipmentCandidates(a, b) {
+  const upgradeDifference = Number(b.upgrade) - Number(a.upgrade);
+  if (upgradeDifference !== 0) return upgradeDifference;
+  if (a.upgrade && b.upgrade && a.category === 'ring' && b.category === 'ring') {
+    const ringScoreDifference = ringCandidateScore(b) - ringCandidateScore(a);
+    if (ringScoreDifference !== 0) return ringScoreDifference;
+    const preferenceDifference = ringPreference(b.info) - ringPreference(a.info);
+    if (preferenceDifference !== 0) return preferenceDifference;
+  }
+  const distanceA = Number.isFinite(a.distance) ? a.distance : 0;
+  const distanceB = Number.isFinite(b.distance) ? b.distance : 0;
+  if (distanceA !== distanceB) return distanceA - distanceB;
+  if (b.tier !== a.tier) return b.tier - a.tier;
+  const slotA = a.item?.slotIndex ?? a.slotId ?? 0;
+  const slotB = b.item?.slotIndex ?? b.slotId ?? 0;
+  return slotA - slotB;
+}
+
 function itemKey(bagObjectId, slotIndex) {
   return `${bagObjectId}:${slotIndex}`;
 }
@@ -81,7 +158,7 @@ export class AutoLootController {
     const plan = this.findPlan();
     if (!plan) return null;
 
-    Hive.walking.stopMoving();
+    stopMoving();
     this.active = {
       ...plan,
       phase: 'approach',
@@ -105,72 +182,25 @@ export class AutoLootController {
       for (const item of bag.items) {
         if ((this.blockedUntil.get(itemKey(bag.objectId, item.slotIndex)) ?? 0) > now) continue;
 
-        const info = Hive.loot.getItemInfo(item.objectType);
-        const category = info?.slotType;
-        const equipment = EQUIPMENT[category];
-        const tier = numericTier(info);
-        if (!equipment || tier === null) continue;
-
-        const threshold = this.thresholdFor(category);
-        const equippedObjectType = inventory[equipment.slot] ?? -1;
-        const equippedInfo = equippedObjectType > 0
-          ? Hive.loot.getItemInfo(equippedObjectType)
-          : null;
-        const equippedTier = numericTier(equippedInfo);
-        const compatible = Hive.self.canEquip(item.objectType);
-        const upgrade = compatible && isEquipmentUpgrade({
-          category,
-          tier,
-          info,
-          equippedObjectType,
-          equippedTier,
-          equippedInfo,
-        });
-        const keepByTier = tier >= threshold;
-        if (!upgrade && !keepByTier) continue;
-
-        const enchantmentCount = upgrade
-          ? (Hive.inventory.getEnchantments(equipment.slot)?.typeIds?.length ?? 0)
-          : 0;
-        const preserveEquipped = upgrade && equippedObjectType > 0 && (
-          enchantmentCount >= 3
-          || (equippedTier !== null && equippedTier >= threshold)
+        const evaluated = evaluateEquipmentItem(
+          item.objectType,
+          inventory,
+          (category) => this.thresholdFor(category),
         );
-        const requiresBuffer = !upgrade || preserveEquipped;
-        if (requiresBuffer && emptySlot === null) continue;
+        if (!evaluated) continue;
+        if (evaluated.requiresBuffer && emptySlot === null) continue;
 
         candidates.push({
           bag,
           item,
-          info,
-          category,
-          tier,
-          upgrade,
-          keepByTier,
-          equipmentSlot: equipment.slot,
-          equippedObjectType,
-          equippedInfo,
-          preserveEquipped,
-          requiresBuffer,
-          destinationSlot: requiresBuffer ? emptySlot : equipment.slot,
+          ...evaluated,
+          destinationSlot: evaluated.requiresBuffer ? emptySlot : evaluated.equipmentSlot,
           distance,
         });
       }
     }
 
-    candidates.sort((a, b) => {
-      const upgradeDifference = Number(b.upgrade) - Number(a.upgrade);
-      if (upgradeDifference !== 0) return upgradeDifference;
-      if (a.upgrade && b.upgrade && a.category === 'ring' && b.category === 'ring') {
-        const ringScoreDifference = ringCandidateScore(b) - ringCandidateScore(a);
-        if (ringScoreDifference !== 0) return ringScoreDifference;
-        const preferenceDifference = ringPreference(b.info) - ringPreference(a.info);
-        if (preferenceDifference !== 0) return preferenceDifference;
-      }
-      return a.distance - b.distance
-        || b.tier - a.tier
-        || a.item.slotIndex - b.item.slotIndex;
-    });
+    candidates.sort(compareEquipmentCandidates);
     return candidates[0] ?? null;
   }
 
@@ -192,7 +222,7 @@ export class AutoLootController {
       if (Hive.self.distanceTo(liveBag.position) > 1) {
         pathfindingWalkTo(this.controller, liveBag.position.x, liveBag.position.y);
       } else {
-        Hive.walking.stopMoving();
+        stopMoving();
         const sent = Hive.loot.pickupToSlot(liveBag, liveItem.slotIndex, action.destinationSlot);
         if (!sent) {
           this.block(action, 'pickup command was rejected');
@@ -279,5 +309,3 @@ export class AutoLootController {
     return null;
   }
 }
-
-export { numericTier };

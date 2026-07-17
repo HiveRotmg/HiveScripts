@@ -1,6 +1,6 @@
 import { Branch, Hive } from '@hive/sdk';
 import { LIMITS } from '../../../config/constants.mjs?rev=max-level-nested-20260715';
-import { AttackMaxingBranch } from './attack-maxing/AttackMaxingBranch.mjs?rev=distant-enemy-progress-20260716';
+import { AttackMaxingBranch } from './attack-maxing/AttackMaxingBranch.mjs?rev=direct-enemy-pathfinding-20260716';
 import { PendingStatMaxingLeaf } from './pending-maxing/PendingStatMaxingLeaf.mjs?rev=attack-maxer-only-20260715';
 import {
   ENABLE_ATTACK_MAXING_WHEN_MAXED_FOR_TESTING,
