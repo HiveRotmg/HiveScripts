@@ -1,0 +1,6 @@
+{
+  "name": "Tutorial",
+  "developer": "Hive",
+  "version": "1.0.0",
+  "entry": "tutorial.mjs"
+}
